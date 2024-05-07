@@ -455,16 +455,16 @@ class ChatGLMMLP(LLMFeedForward):
             self, lora_name: str, act_fn: nn.Module, hidden_states: torch.Tensor) -> torch.Tensor:
         if lora_name in self.dense_h_to_4h.loras_:
             hidden_states = self.dense_h_to_4h.loras_[lora_name].forward(
-                self.dense_h_to_4h.base_layer_.forward(hidden_states),hidden_states
+                self.dense_h_to_4h.base_layer_.forward(hidden_states), hidden_states
             )
         else:
             hidden_states = self.dense_h_to_4h.base_layer_.forward(hidden_states)
-        
+
         hidden_states = self.activation_func(hidden_states)
-        
+
         if lora_name in self.dense_4h_to_h.loras_:
             hidden_states = self.dense_4h_to_h.loras_[lora_name].forward(
-                self.dense_4h_to_h.base_layer_.forward(hidden_states),hidden_states
+                self.dense_4h_to_h.base_layer_.forward(hidden_states), hidden_states
             )
         else:
             hidden_states = self.dense_4h_to_h.base_layer_.forward(hidden_states)
@@ -534,7 +534,7 @@ class ChatGLMDecoderLayer(LLMDecoder):
         output = nn.functional.dropout(mlp_output, p=self.hidden_dropout, training=not input_args.inference_mode_)
         output = residual + output
 
-        return output,*router_logits
+        return output, *router_logits
 
 
 class ChatGLMForCausalLM(LLMForCausalLM):
