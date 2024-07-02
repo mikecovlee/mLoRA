@@ -252,13 +252,16 @@ if __name__ == "__main__":
     if args.inference:
         inference(model, tokenizer, adapters)
     elif args.evaluate:
-        mlora.evaluate(model=model, tokenizer=tokenizer, configs=adapters,
+        results = mlora.evaluate(model=model, tokenizer=tokenizer, configs=adapters,
                        max_concurrent_jobs=config.get(
                            "eval_lora_simultaneously_num", None),
                        retrying_steps=config.get(
                            "eval_rollback_retrying_steps", 20),
                        max_seq_len=config["cutoff_len"],
                        save_file=config.get("evaluate_result", None))
+
+        with open("evaluate_result.json", "a") as fp:
+            json.dump(results, fp, indent=4)
     else:
         mlora.train(mlora.Dispatcher(config, tokenizer), model,
                     adapters, args.dir, config["save_step"])
