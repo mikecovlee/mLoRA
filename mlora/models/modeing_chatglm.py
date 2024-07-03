@@ -295,7 +295,7 @@ class ChatGLMAttention(LLMAttention):
         if self.multi_query_attention:
             self.num_multi_query_groups_per_partition = config.multi_query_group_num
             self.qkv_hidden_size = (
-                self.projection_size + 2 * self.hidden_size_per_attention_head * config.multi_query_group_num
+                    self.projection_size + 2 * self.hidden_size_per_attention_head * config.multi_query_group_num
             )
 
         # rotary_emb
@@ -346,7 +346,8 @@ class ChatGLMAttention(LLMAttention):
                 key_layer.size()[:-1] + (self.num_multi_query_groups_per_partition, self.hidden_size_per_attention_head)
             )
             value_layer = value_layer.view(
-                value_layer.size()[:-1] + (self.num_multi_query_groups_per_partition, self.hidden_size_per_attention_head)
+                value_layer.size()[:-1] + (
+                    self.num_multi_query_groups_per_partition, self.hidden_size_per_attention_head)
             )
         else:
             new_tensor_shape = mixed_x_layer.size()[:-1] + (self.num_attention_heads_per_partition,
@@ -420,7 +421,7 @@ class ChatGLMSequentialWrapper(nn.Module):
             return (outputs[0],) + input[1:]
         elif module_name == "ChatGLMLayerNorm":
             output = self.wrapper_module_.forward(input[0])
-            return (output, ) + input[1:]
+            return (output,) + input[1:]
         else:
             raise f"module invalid:{module_name}"
 
@@ -634,17 +635,20 @@ class ChatGLMForCausalLM(LLMForCausalLM):
 
         for idx, layer in enumerate(llm_model.transformer.encoder.layers):
             decoder = ChatGLMDecoderLayer(
-                ChatGLMAttention(layer.self_attention.query_key_value,
-                                 layer.self_attention.dense,
-                                 llm_args,
-                                 idx
-                                 ),
-                FeedForward(ChatGLMMLP(layer.mlp.dense_h_to_4h,
-                                       layer.mlp.dense_4h_to_h,
-                                       llm_args
-                                       )
-                            ),
-                llm_args
+                attn=ChatGLMAttention(
+                    layer.self_attention.query_key_value,
+                    layer.self_attention.dense,
+                    llm_args,
+                    idx
+                ),
+                mlp=FeedForward(
+                    ChatGLMMLP(
+                        layer.mlp.dense_h_to_4h,
+                        layer.mlp.dense_4h_to_h,
+                        llm_args
+                    )
+                ),
+                config=llm_args
             )
             decoder.input_layernorm.load_weight(layer.input_layernorm.weight)
             decoder.post_layernorm.load_weight(layer.post_attention_layernorm.weight)
