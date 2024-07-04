@@ -3,10 +3,12 @@ import os
 import random
 
 model_dir = "~/workspace/models/"
-task_list = {"arc-c", "arc-e", "boolq", "obqa", "piqa", "siqa", "hellaswag", "winogrande"}
+task_list = {"arc-c", "piqa", "hellaswag"}
 model_list = {"mistralai/Mistral-7B-v0.1"}
-peft_methods0 = {"lora", "dora", "qlora", "loraplus"}
-peft_methods1 = {"rslora", "mixlora", "mixdora", "qmixlora"}
+peft_methods0 = {"dora"}
+peft_methods1 = {"qlora", "loraplus"}
+peft_methods2 = {"rslora", "mixlora"}
+peft_methods3 = {"mixdora", "qmixlora"}
 
 config_command = f"python launch.py gen"
 run_command = f"python launch.py run"
@@ -28,32 +30,37 @@ run_suffix = {
 }
 
 
-def sys_call(method, tasks, model):
-    name_prefix = f"{model.split('/')[-1]}_{method}_{tasks}"
-
+def call_gen(peft_method, tasks, name_prefix):
     config = (f"{config_command} --tasks {tasks} --adapter_name {name_prefix}"
-              f" --file_name {name_prefix}.json {config_suffix.get(method, '')}")
+              f" --file_name {name_prefix}.json {config_suffix.get(peft_method, '')}")
+    os.system(config)
+    print(config)
+
+
+def call_run(peft_method, model, name_prefix):
     run = (f"{run_command} --base_model {model_dir}{model} --config {name_prefix}.json"
            f" --cuda_device {args.cuda} --log_file {name_prefix}.log"
-           f" --overwrite false --attn_impl eager {run_suffix.get(method, '')}")
-
-    os.system(config)
+           f" --overwrite false --attn_impl eager {run_suffix.get(peft_method, '')}")
     os.system(run)
-    # print(config)
-    # print(run)
+    print(run)
 
 
 def main(args):
-    peft_methods = None
-    if args.cuda == 0:
-        peft_methods = peft_methods0
-    elif args.cuda == 1:
-        peft_methods = peft_methods1
+    peft_methods = peft_methods0
 
     for model in model_list:
         for method in peft_methods:
             for task in task_list:
-                sys_call(method, task, model)
+                name_prefix = f"{model.split('/')[-1]}_{method}_{task}"
+                if args.run:
+                    call_run(method, model, name_prefix)
+                elif args.gen:
+                    call_gen(method, task, name_prefix)
+                else:
+                    call_gen(method, task, name_prefix)
+                    call_run(method, model, name_prefix)
+
+
     # model = "THUDM/chatglm3-6b"
     # method = "lora"
     # for task in task_list:
@@ -64,7 +71,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Batch run tasks")
     parser.add_argument("--cuda", type=int, default=0, help="CUDA device number")
     parser.add_argument("--run", action="store_true", help="Run the tasks")
-    parser.add_argument("--evaluate", action="store_true", help="Evaluate the tasks")
+    parser.add_argument("--gen", action="store_true", help="Generate the config")
     parser.add_argument("--multi-task", action="store_true", help="Run multiple tasks at once")
     return parser.parse_args()
 
