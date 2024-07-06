@@ -204,6 +204,7 @@ def show_help():
         --quantize     [none], 4bit, 8bit
         --dtype        [bf16], fp16, fp32
         --tf32         [false]
+        --save_result  To save result to evaluate_result.json
     """)
 
 

@@ -73,6 +73,8 @@ parser.add_argument('--debug', action="store_true",
                     help='Enabling debugging mode')
 parser.add_argument('--deterministic', action="store_true",
                     help='Use deterministic algorithms to improve the reproducibility')
+parser.add_argument('save_result', action="store_true",
+                    help='Save the evaluate results to ./evaluate_result.json')
 
 args = parser.parse_args()
 
@@ -260,8 +262,9 @@ if __name__ == "__main__":
                        max_seq_len=config["cutoff_len"],
                        save_file=config.get("evaluate_result", None))
 
-        with open("evaluate_result.json", "a") as fp:
-            json.dump(results, fp, indent=4)
+        if args.save_result:
+            with open("evaluate_result.json", "a") as fp:
+                json.dump(results, fp, indent=4)
     else:
         mlora.train(mlora.Dispatcher(config, tokenizer), model,
                     adapters, args.dir, config["save_step"])
