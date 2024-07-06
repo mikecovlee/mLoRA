@@ -565,14 +565,6 @@ class GLMSequentialWrapper(torch.nn.Module):
                 self.router_probs_ = outputs[1:]
             return (outputs[0],) + input[1:]
         else:
-            print(module_name)
-            print(module_name)
-            print(module_name)
-            print(module_name)
-            print(module_name)
-            print(module_name)
-            print(module_name)
-            print(module_name)
             raise f"module invalid:{module_name}"
 
 
