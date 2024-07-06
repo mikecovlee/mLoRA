@@ -589,7 +589,8 @@ class ChatGLMForCausalLM(LLMForCausalLM):
         # Encoder(Decoder) layers.
         self.layers_: List[GLMBlock] = []
         # Final layer norm.
-        self.final_layernorm_: GLMLayerNorm = None
+        if self.config_.post_layer_norm:
+            self.final_layernorm_ = GLMLayerNorm(config)
         # Output layer.
         self.lm_head_ = torch.nn.Linear(
             config.dim_, config.vocab_size_, bias=config.add_bias_linear,
@@ -728,8 +729,8 @@ class ChatGLMForCausalLM(LLMForCausalLM):
         # =============================================
         #               Final Layer Norm
         # =============================================
-        if model.config_.post_layer_norm:
-            model.final_layernorm = GLMLayerNorm(config)
+        if config.post_layer_norm:
+            model.final_layernorm_.load_weight(llm_model.transformer.encoder.final_layernorm.weight)
 
         # =============================================
         #                   Output Layer
