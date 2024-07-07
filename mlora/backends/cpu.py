@@ -18,6 +18,9 @@ class CPUBackend(BasicBackend):
     def device_name(self) -> str:
         return "cpu"
 
+    def default_device_name(self) -> str:
+        return "cpu"
+
     def is_available(self) -> bool:
         return True
 

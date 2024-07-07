@@ -592,7 +592,7 @@ class PhiForCausalLM(LLMForCausalLM):
         llm_model: modeling_phi.PhiForCausalLM,
         attn_impl: str = "eager",
         use_sliding_window: bool = False,
-        device: str = get_backend().device_name() + ":0",
+        device: str = get_backend().default_device_name(),
     ):
         assert not use_sliding_window, "Phi model does not support SWA."
         llm_config: modeling_phi.PhiConfig = llm_model.config

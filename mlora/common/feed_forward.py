@@ -2,6 +2,8 @@ from typing import Dict, List, Optional, Tuple
 
 import torch
 
+from mlora.backends import _backend
+
 from .lora_linear import Linear, get_range_tensor
 from .mix_lora import moe_layer_factory
 from .model import LLMFeedForward
@@ -42,7 +44,7 @@ class FeedForward(torch.nn.Module):
                 self.moes_[config.adapter_name].gate_.weight.copy_(gate)
 
     def _mixlora_forward(self, data: torch.Tensor, input_args: LLMModelInput):
-        final_hidden_states = torch.zeros_like(data)
+        final_hidden_states = _backend.init_tensor(data)
 
         if input_args.output_router_logits_:
             router_logits = [None for _ in range(len(input_args.batch_configs_))]
@@ -70,8 +72,11 @@ class FeedForward(torch.nn.Module):
                     moe_name, self.mlp_.act_, data[start_idx:end_idx]
                 )
 
-            final_hidden_states.index_add_(
-                0, lora_range[start_idx:end_idx], current_hidden_states
+            _backend.index_copy(
+                final_hidden_states,
+                0,
+                lora_range[start_idx:end_idx],
+                current_hidden_states,
             )
 
         return final_hidden_states, router_logits

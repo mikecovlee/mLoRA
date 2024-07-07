@@ -86,7 +86,7 @@ class LLMModelInput:
 class LoraConfig:
     adapter_name: str = ""
     task_name: str = "casual"
-    device: str = f"{get_backend().device_name()}:0"
+    device: str = get_backend().default_device_name()
     # Weight-Decomposed Low-Rank Adaptation
     use_dora_: bool = False
     # Rank-Stabilized LoRA

@@ -243,7 +243,7 @@ def do_evaluate(model_name: str,
                 model_dtype: str,
                 adapter_names: List[str],
                 batch_size: int = 2,
-                device: str = f"{mlora.get_backend().device_name()}:0",
+                device: str = mlora.get_backend().default_device_name(),
                 output: str = "mmlu_scores.csv"):
     tokenizer = mlora.Tokenizer(model_name)
     model = mlora.LLMModel.from_pretrained(

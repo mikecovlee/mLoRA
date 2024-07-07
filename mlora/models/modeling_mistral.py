@@ -278,7 +278,7 @@ class MistralForCausalLM(LlamaForCausalLM):
         llm_model: modeling_mistral.MistralForCausalLM,
         attn_impl: str = "eager",
         use_sliding_window: bool = False,
-        device: str = get_backend().device_name() + ":0",
+        device: str = get_backend().default_device_name(),
     ):
         llm_config: modeling_mistral.MistralConfig = llm_model.config
         llm_args = MistralConfig(

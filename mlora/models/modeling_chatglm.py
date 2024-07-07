@@ -730,7 +730,7 @@ class GLMForCausalLM(LLMForCausalLM):
         llm_model,
         attn_impl: str = "eager",
         use_sliding_window: bool = False,
-        device: str = get_backend().device_name() + ":0",
+        device: str = get_backend().default_device_name(),
     ):
         assert not use_sliding_window, "ChatGLM model does not support SWA."
         assert attn_impl == "eager", "ChatGLM only supports eager attention."
