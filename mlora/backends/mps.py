@@ -17,9 +17,6 @@ class MPSBackend(BasicBackend):
     def device_name(self) -> str:
         return "mps"
 
-    def default_device_name(self) -> str:
-        return "mps"
-
     def is_available(self) -> bool:
         return torch.backends.mps.is_available()
 

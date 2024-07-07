@@ -14,7 +14,7 @@ class BasicBackend:
         pass
 
     def default_device_name(self) -> str:
-        pass
+        return self.device_name()
 
     def is_available(self) -> bool:
         pass
