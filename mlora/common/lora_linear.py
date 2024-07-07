@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mlora.backends import MPSBackend, _backend
+from mlora.backends import _backend
 from mlora.utils import is_package_available
 
 from .modelargs import LLMModelInput, LoraConfig
