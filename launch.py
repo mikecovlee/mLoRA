@@ -120,7 +120,7 @@ def gen_config(
         for task_name in tasks:
             lora_config = lora_template.copy()
             casual_task = (
-                    not multi_task and task_name not in mlora.tasks.task_dict)
+                not multi_task and task_name not in mlora.tasks.task_dict)
             if casual_task:
                 lora_config["name"] = f"casual_{index}"
                 lora_config["task_name"] = "casual"
@@ -204,7 +204,6 @@ def show_help():
         --quantize     [none], 4bit, 8bit
         --dtype        [bf16], fp16, fp32
         --tf32         [false]
-        --save_result  To save result to evaluate_result.json
     """)
 
 

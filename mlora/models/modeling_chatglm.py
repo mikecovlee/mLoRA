@@ -1,5 +1,3 @@
-from torch import Tensor
-
 from mlora.common import (
     prepare_4d_causal_attention_mask,
     Masks,
@@ -13,14 +11,17 @@ from mlora.common import (
     LLMDecoder,
     LLMForCausalLM,
 )
+from mlora.backends import get_backend
+from mlora.utils import copy_parameters
+
 from typing import Tuple, Dict, List, Optional
 from collections import OrderedDict
 from dataclasses import dataclass
-from mlora.backends import get_backend
-from mlora.utils import copy_parameters
-import torch
+
 import math
-from torch.nn import LayerNorm, functional
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 @dataclass
@@ -45,7 +46,7 @@ def split_tensor_along_last_dim(
         tensor: torch.Tensor,
         num_partitions: int,
         contiguous_split_chunks: bool = False,
-) -> tuple[Tensor, ...]:
+) -> tuple[torch.Tensor, ...]:
     """Split a tensor along its last dimension.
 
     Arguments:
@@ -72,7 +73,8 @@ def split_tensor_along_last_dim(
 class RotaryEmbedding(torch.nn.Module):
     def __init__(self, dim, original_impl=False, device=None, dtype=None):
         super().__init__()
-        inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2, device=device).to(dtype=dtype) / dim))
+        inv_freq = 1.0 / \
+            (10000 ** (torch.arange(0, dim, 2, device=device).to(dtype=dtype) / dim))
         self.register_buffer("inv_freq", inv_freq)
         self.dim = dim
         self.original_impl = original_impl
@@ -87,7 +89,8 @@ class RotaryEmbedding(torch.nn.Module):
         https://github.com/labmlai/annotated_deep_learning_paper_implementations/blob/master/license.
         """
         # $\Theta = {\theta_i = 10000^{\frac{2(i-1)}{d}}, i \in [1, 2, ..., \frac{d}{2}]}$
-        theta = 1.0 / (base ** (torch.arange(0, n_elem, 2, dtype=torch.float, device=device) / n_elem))
+        theta = 1.0 / (base ** (torch.arange(0, n_elem, 2,
+                       dtype=torch.float, device=device) / n_elem))
 
         # Create position indexes `[0, 1, ..., seq_len - 1]`
         seq_idx = torch.arange(seq_len, dtype=torch.float, device=device)
@@ -95,7 +98,8 @@ class RotaryEmbedding(torch.nn.Module):
         # Calculate the product of position index and $\theta_i$
         idx_theta = torch.outer(seq_idx, theta).float()
 
-        cache = torch.stack([torch.cos(idx_theta), torch.sin(idx_theta)], dim=-1)
+        cache = torch.stack(
+            [torch.cos(idx_theta), torch.sin(idx_theta)], dim=-1)
 
         # this is to mimic the behaviour of complex32, else we will get different results
         if dtype in (torch.float16, torch.bfloat16, torch.int8):
@@ -120,8 +124,10 @@ def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Ten
     rope_cache = rope_cache.view(sq, -1, 1, xshaped.size(3), 2)
     x_out2 = torch.stack(
         [
-            xshaped[..., 0] * rope_cache[..., 0] - xshaped[..., 1] * rope_cache[..., 1],
-            xshaped[..., 1] * rope_cache[..., 0] + xshaped[..., 0] * rope_cache[..., 1],
+            xshaped[..., 0] * rope_cache[..., 0] -
+            xshaped[..., 1] * rope_cache[..., 1],
+            xshaped[..., 1] * rope_cache[..., 0] +
+            xshaped[..., 0] * rope_cache[..., 1],
         ],
         -1,
     )
@@ -155,7 +161,8 @@ class GLMLayerNorm(torch.nn.Module):
                 dtype=config.dtype_
             )
         else:
-            self.layernorm = LayerNorm(normalized_shape=config.dim_, eps=config.layernorm_epsilon)
+            self.layernorm = nn.LayerNorm(
+                normalized_shape=config.dim_, eps=config.layernorm_epsilon)
 
     def forward(self, data: torch.tensor) -> torch.Tensor:
         return self.layernorm.forward(data)
@@ -195,12 +202,15 @@ class CoreAttention(torch.nn.Module):
         # Raw attention scores
 
         # [b, np, sq, sk]
-        output_size = (query_layer.size(1), query_layer.size(2), query_layer.size(0), key_layer.size(0))
+        output_size = (query_layer.size(1), query_layer.size(2),
+                       query_layer.size(0), key_layer.size(0))
 
         # [sq, b, np, hn] -> [sq, b * np, hn]
-        query_layer = query_layer.view(output_size[2], output_size[0] * output_size[1], -1)
+        query_layer = query_layer.view(
+            output_size[2], output_size[0] * output_size[1], -1)
         # [sk, b, np, hn] -> [sk, b * np, hn]
-        key_layer = key_layer.view(output_size[3], output_size[0] * output_size[1], -1)
+        key_layer = key_layer.view(
+            output_size[3], output_size[0] * output_size[1], -1)
 
         # pre-allocting input tensor: [b * np, sq, sk]
         matmul_input_buffer = torch.empty(
@@ -235,8 +245,9 @@ class CoreAttention(torch.nn.Module):
             attention_mask.tril_()
             attention_mask = ~attention_mask
         if attention_mask is not None:
-            attention_scores = attention_scores.masked_fill(attention_mask.bool(), float("-inf"))
-        attention_probs = functional.softmax(attention_scores, dim=-1)
+            attention_scores = attention_scores.masked_fill(
+                attention_mask.bool(), float("-inf"))
+        attention_probs = F.softmax(attention_scores, dim=-1)
         attention_probs = attention_probs.type_as(value_layer)
 
         # This is actually dropping out entire tokens to attend to, which might
@@ -250,11 +261,14 @@ class CoreAttention(torch.nn.Module):
         # [sk, b, np, hn] --> [b, np, sq, hn]
 
         # context layer shape: [b, np, sq, hn]
-        output_size = (value_layer.size(1), value_layer.size(2), query_layer.size(0), value_layer.size(3))
+        output_size = (value_layer.size(1), value_layer.size(2),
+                       query_layer.size(0), value_layer.size(3))
         # change view [sk, b * np, hn]
-        value_layer = value_layer.view(value_layer.size(0), output_size[0] * output_size[1], -1)
+        value_layer = value_layer.view(value_layer.size(
+            0), output_size[0] * output_size[1], -1)
         # change view [b * np, sq, sk]
-        attention_probs = attention_probs.view(output_size[0] * output_size[1], output_size[2], -1)
+        attention_probs = attention_probs.view(
+            output_size[0] * output_size[1], output_size[2], -1)
         # matmul: [b * np, sq, hn]
         context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
         # change view [b, np, sq, hn]
@@ -262,7 +276,8 @@ class CoreAttention(torch.nn.Module):
         # [b, np, sq, hn] --> [sq, b, np, hn]
         context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
         # [sq, b, np, hn] --> [sq, b, hp]
-        new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
+        new_context_layer_shape = context_layer.size(
+        )[:-2] + (self.hidden_size_per_partition,)
         context_layer = context_layer.view(*new_context_layer_shape)
 
         return context_layer
@@ -282,16 +297,18 @@ class GLMSelfAttention(LLMAttention):
 
         # Per attention head and per-partition values.
         self.hidden_size_per_attention_head = (
-                config.kv_channels * config.n_heads_ // config.n_heads_)
+            config.kv_channels * config.n_heads_ // config.n_heads_)
         self.num_attention_heads_per_partition = config.n_heads_
         self.multi_query_attention = config.multi_query_attention
         if self.multi_query_attention:
             self.num_multi_query_groups_per_partition = config.multi_query_group_num
 
         # QKV layer.
-        self.query_key_value = Linear(base_layer=qkv_layer, device=config.device_)
+        self.query_key_value = Linear(
+            base_layer=qkv_layer, device=config.device_)
         # Core attention layer.
-        self.core_attention = CoreAttention(config=config, layer_number=self.layer_idx)
+        self.core_attention = CoreAttention(
+            config=config, layer_number=self.layer_idx)
         # Dense layer.
         self.dense = Linear(base_layer=dense_layer, device=config.device_)
 
@@ -332,10 +349,12 @@ class GLMSelfAttention(LLMAttention):
             )
             # q:[seq,bacth,heads,per_attion]  k,v:[seq,bacth,multi_query_group,per_attion]
             query_layer = query_layer.view(
-                query_layer.size()[:-1] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head)
+                query_layer.size()[
+                    :-1] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head)
             )
             key_layer = key_layer.view(
-                key_layer.size()[:-1] + (self.num_multi_query_groups_per_partition, self.hidden_size_per_attention_head)
+                key_layer.size()[
+                    :-1] + (self.num_multi_query_groups_per_partition, self.hidden_size_per_attention_head)
             )
             value_layer = value_layer.view(
                 value_layer.size()[:-1] + (
@@ -347,11 +366,13 @@ class GLMSelfAttention(LLMAttention):
             mixed_x_layer = mixed_x_layer.view(*new_tensor_shape)
 
             # [sq, b, np, 3 * per_attention] -> 3*[seq,batch,heads,per_attetion]
-            (query_layer, key_layer, value_layer) = split_tensor_along_last_dim(mixed_x_layer, 3)
+            (query_layer, key_layer, value_layer) = split_tensor_along_last_dim(
+                mixed_x_layer, 3)
 
         # Apply relative positional encoding (rotary embedding).
         if self.rotary_pos_emb is not None:
-            query_layer = apply_rotary_pos_emb(query_layer, self.rotary_pos_emb)
+            query_layer = apply_rotary_pos_emb(
+                query_layer, self.rotary_pos_emb)
             key_layer = apply_rotary_pos_emb(key_layer, self.rotary_pos_emb)
 
         # Expand the kv(group*hidden_size) -> (n_head*hidden_size).
@@ -362,20 +383,23 @@ class GLMSelfAttention(LLMAttention):
                 -1, -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1
             )
             key_layer = key_layer.contiguous().view(
-                key_layer.size()[:2] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head)
+                key_layer.size()[
+                    :2] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head)
             )
             value_layer = value_layer.unsqueeze(-2)
             value_layer = value_layer.expand(
                 -1, -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1
             )
             value_layer = value_layer.contiguous().view(
-                value_layer.size()[:2] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head)
+                value_layer.size()[
+                    :2] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head)
             )
 
         # =============================================
         #               Core Attention Layer
         # =============================================
-        context_layer = self.core_attention(query_layer, key_layer, value_layer, attention_mask)
+        context_layer = self.core_attention(
+            query_layer, key_layer, value_layer, attention_mask)
 
         # =============================================
         #                   Dense Layer
@@ -395,7 +419,7 @@ class GLMMLP(LLMFeedForward):
 
         def swiglu(x):
             x = torch.chunk(x, 2, dim=-1)
-            return functional.silu(x[0]) * x[1]
+            return F.silu(x[0]) * x[1]
 
         self.activation_func = swiglu
 
@@ -417,19 +441,23 @@ class GLMMLP(LLMFeedForward):
             self, lora_name: str, act_fn: torch.nn.Module, hidden_states: torch.Tensor) -> torch.Tensor:
         if lora_name in self.dense_h_to_4h.loras_:
             hidden_states = self.dense_h_to_4h.loras_[lora_name].forward(
-                self.dense_h_to_4h.base_layer_.forward(hidden_states), hidden_states
+                self.dense_h_to_4h.base_layer_.forward(
+                    hidden_states), hidden_states
             )
         else:
-            hidden_states = self.dense_h_to_4h.base_layer_.forward(hidden_states)
+            hidden_states = self.dense_h_to_4h.base_layer_.forward(
+                hidden_states)
 
         hidden_states = self.activation_func(hidden_states)
 
         if lora_name in self.dense_4h_to_h.loras_:
             hidden_states = self.dense_4h_to_h.loras_[lora_name].forward(
-                self.dense_4h_to_h.base_layer_.forward(hidden_states), hidden_states
+                self.dense_4h_to_h.base_layer_.forward(
+                    hidden_states), hidden_states
             )
         else:
-            hidden_states = self.dense_4h_to_h.base_layer_.forward(hidden_states)
+            hidden_states = self.dense_4h_to_h.base_layer_.forward(
+                hidden_states)
 
         return hidden_states
 
@@ -485,7 +513,7 @@ class GLMBlock(LLMDecoder):
         else:
             residual = hidden_states
 
-        dropout_result = functional.dropout(
+        dropout_result = F.dropout(
             attention_output,
             p=self.hidden_dropout,
             training=not input_args.inference_mode_
@@ -508,7 +536,8 @@ class GLMBlock(LLMDecoder):
         else:
             residual = layernorm_input
 
-        output = functional.dropout(mlp_output, p=self.hidden_dropout, training=not input_args.inference_mode_)
+        output = F.dropout(
+            mlp_output, p=self.hidden_dropout, training=not input_args.inference_mode_)
         output = residual + output
 
         return output, *router_logits
@@ -540,7 +569,7 @@ class GLMEmbedding(torch.nn.Module):
 
 
 class GLMSequentialWrapper(torch.nn.Module):
-    def __init__(self, module: torch.nn.Module or LLMDecoder):
+    def __init__(self, module: nn.Module):
         super().__init__()
         self.wrapper_module_ = module
 
@@ -568,7 +597,7 @@ class GLMSequentialWrapper(torch.nn.Module):
             raise f"module invalid:{module_name}"
 
 
-class ChatGLMForCausalLM(LLMForCausalLM):
+class GLMForCausalLM(LLMForCausalLM):
     def __init__(self, config: GLMConfig) -> None:
         self.config_ = config
         self.padding_idx_ = config.pad_token_id_
@@ -595,7 +624,8 @@ class ChatGLMForCausalLM(LLMForCausalLM):
     def sequential_module(self) -> OrderedDict:
         seq_module = OrderedDict()
 
-        seq_module.update({"embedding": GLMSequentialWrapper(self.embed_tokens_)})
+        seq_module.update(
+            {"embedding": GLMSequentialWrapper(self.embed_tokens_)})
         seq_module.move_to_end("embedding")
 
         for index, layer in enumerate(self.decoder_stack()):
@@ -613,28 +643,19 @@ class ChatGLMForCausalLM(LLMForCausalLM):
     def causal_mask(self,
                     input_tokens: torch.Tensor,
                     additional_mask: List[Masks] = None,
-                    multi_head: bool = False,
                     diagonal: int = 1) -> torch.Tensor:
-        if multi_head:
-            assert self.config_.attn_implementation_ == "xformers"
-        else:
-            assert self.config_.attn_implementation_ != "xformers"
 
-        return prepare_4d_causal_attention_mask(
-            input_tokens=input_tokens,
-            n_heads=self.config_.n_heads_ if multi_head else 1,
-            additional_mask=additional_mask, diagonal=diagonal,
-            dtype=self.config_.dtype_, device=self.config_.device_
-        )
+        return prepare_4d_causal_attention_mask(input_tokens=input_tokens, n_heads=1,
+                                                additional_mask=additional_mask, diagonal=diagonal,
+                                                dtype=self.config_.dtype_, device=self.config_.device_)
 
     @staticmethod
-    def from_pretrained(
-            llm_model,
-            attn_impl: str = "eager",
-            use_sliding_window: bool = False,
-            device: str = get_backend().device_name() + ":0"
-    ):
+    def from_pretrained(llm_model,
+                        attn_impl: str = "eager",
+                        use_sliding_window: bool = False,
+                        device: str = get_backend().device_name() + ":0"):
         assert not use_sliding_window, "ChatGLM model does not support SWA."
+        assert attn_impl == "eager", "ChatGLM only supports eager attention."
 
         # Get the config from LLM model and input args.
         llm_config = llm_model.config
@@ -668,7 +689,7 @@ class ChatGLMForCausalLM(LLMForCausalLM):
             padded_vocab_size=llm_config.padded_vocab_size,
         )
 
-        model = ChatGLMForCausalLM(config=config)
+        model = GLMForCausalLM(config=config)
         llm_model.requires_grad_(False)
 
         # =============================================
@@ -715,14 +736,16 @@ class ChatGLMForCausalLM(LLMForCausalLM):
             # Create a transformer block.
             encoder = GLMBlock(self_attention, mlp, config)
             encoder.input_layernorm.load_weight(layer.input_layernorm.weight)
-            encoder.post_layernorm.load_weight(layer.post_attention_layernorm.weight)
+            encoder.post_layernorm.load_weight(
+                layer.post_attention_layernorm.weight)
             model.layers_.append(encoder)
 
         # =============================================
         #               Final Layer Norm
         # =============================================
         if config.post_layer_norm:
-            model.final_layernorm_.load_weight(llm_model.transformer.encoder.final_layernorm.weight)
+            model.final_layernorm_.load_weight(
+                llm_model.transformer.encoder.final_layernorm.weight)
 
         # =============================================
         #                   Output Layer
