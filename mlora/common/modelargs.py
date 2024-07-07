@@ -61,19 +61,18 @@ class LLMModelOutput:
 
 
 @dataclass
-class LoraBatchDataConfig:
+class LLMBatchConfig:
     adapter_name_: str = ""
     batch_start_idx_: int = -1
     batch_end_idx_: int = -1
 
 
 @dataclass
-class MultiLoraBatchData:
-    lora_batch_data_config_: List[LoraBatchDataConfig] = None
-
+class LLMModelInput:
+    batch_configs_: List[LLMBatchConfig] = None
     batch_tokens_: List[Tokens] = None
     batch_labels_: List[Labels] = None
-    attention_masks_: List[Masks] = None
+    batch_masks_: List[Masks] = None
 
     output_router_logits_: bool = True
 

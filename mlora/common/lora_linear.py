@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from mlora.backends import MPSBackend, _backend
 from mlora.utils import is_package_available
 
-from .modelargs import LoraConfig, MultiLoraBatchData
+from .modelargs import LLMModelInput, LoraConfig
 
 if is_package_available("bitsandbytes"):
     import bitsandbytes as bnb
@@ -67,7 +67,7 @@ class LoraFunction(torch.autograd.Function):
         ctx,
         result: torch.Tensor,
         data: torch.Tensor,
-        input_args: MultiLoraBatchData,
+        input_args: LLMModelInput,
         dropouts: List[float],
         scalings: List[float],
         *args,
@@ -81,7 +81,7 @@ class LoraFunction(torch.autograd.Function):
         for lora_a, lora_b, lora_config, dropout, scaling in zip(
             args[::2],
             args[1::2],
-            input_args.lora_batch_data_config_,
+            input_args.batch_configs_,
             dropouts,
             scalings,
         ):
@@ -151,7 +151,7 @@ class LoraFunction(torch.autograd.Function):
             loras[2::3],
             ctx.dropouts,
             ctx.scalings,
-            ctx.input_args.lora_batch_data_config_,
+            ctx.input_args.batch_configs_,
         ):
             start_idx = lora_config.batch_start_idx_
             end_idx = lora_config.batch_end_idx_
@@ -355,13 +355,13 @@ class Linear(nn.Module):
         residual: torch.Tensor,
         lora_delta: torch.Tensor,
         hidden_states: torch.Tensor,
-        input_args: MultiLoraBatchData,
+        input_args: LLMModelInput,
     ):
         next_states = torch.zeros_like(residual)
         lora_range = get_range_tensor(
             next_states.device, batch_size=next_states.shape[0]
         )
-        for lora_config in input_args.lora_batch_data_config_:
+        for lora_config in input_args.batch_configs_:
             adapter_name = lora_config.adapter_name_
             start_idx = lora_config.batch_start_idx_
             end_idx = lora_config.batch_end_idx_
@@ -389,7 +389,7 @@ class Linear(nn.Module):
         return next_states
 
     def _efficient_impl(
-        self, hidden_states: torch.Tensor, input_args: MultiLoraBatchData
+        self, hidden_states: torch.Tensor, input_args: LLMModelInput
     ) -> torch.Tensor:
         # hidden_states shape is: batch_size * max_seq_len * dim
         # result = hidden_states @ self.weight_.transpose(0, 1)
@@ -402,7 +402,7 @@ class Linear(nn.Module):
         dropouts: List[float] = []
         scalings: List[float] = []
         loras: Tuple[torch.Tensor] = ()
-        for lora_config in input_args.lora_batch_data_config_:
+        for lora_config in input_args.batch_configs_:
             adapter_name = lora_config.adapter_name_
 
             if adapter_name == "" or adapter_name not in self.loras_:
@@ -446,7 +446,7 @@ class Linear(nn.Module):
         return next_states.to(hidden_states.dtype)
 
     def _compatible_impl(
-        self, hidden_states: torch.Tensor, input_args: MultiLoraBatchData
+        self, hidden_states: torch.Tensor, input_args: LLMModelInput
     ) -> torch.Tensor:
         # hidden_states shape is: batch_size * max_seq_len * dim
         # result = hidden_states @ self.weight_.transpose(0, 1)
@@ -458,7 +458,7 @@ class Linear(nn.Module):
         next_states = torch.zeros_like(residual)
         lora_range = get_range_tensor(hidden_states.device, hidden_states.shape[0])
 
-        for lora_config in input_args.lora_batch_data_config_:
+        for lora_config in input_args.batch_configs_:
             adapter_name = lora_config.adapter_name_
             start_idx = lora_config.batch_start_idx_
             end_idx = lora_config.batch_end_idx_
@@ -474,7 +474,7 @@ class Linear(nn.Module):
         return next_states
 
     def forward(
-        self, hidden_states: torch.Tensor, input_args: MultiLoraBatchData
+        self, hidden_states: torch.Tensor, input_args: LLMModelInput
     ) -> torch.Tensor:
         if input_args.efficient_operator_:
             return self._efficient_impl(hidden_states, input_args)

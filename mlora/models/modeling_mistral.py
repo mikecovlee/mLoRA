@@ -9,7 +9,7 @@ import transformers.models.qwen2.modeling_qwen2 as modeling_qwen2
 from mlora.backends import _backend, get_backend
 from mlora.common import (
     FeedForward,
-    MultiLoraBatchData,
+    LLMModelInput,
     _flash_attn_available,
     apply_rotary_emb,
     get_unpad_data,
@@ -191,7 +191,7 @@ class MistralFlashAttention(LlamaAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        input_args: MultiLoraBatchData,
+        input_args: LLMModelInput,
         attention_mask: Optional[torch.Tensor] = None,
     ):
         batch_size, max_seq_len, _ = hidden_states.shape

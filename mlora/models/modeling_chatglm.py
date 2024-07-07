@@ -17,8 +17,8 @@ from mlora.common import (
     LLMFeedForward,
     LLMForCausalLM,
     LLMModelArgs,
+    LLMModelInput,
     Masks,
-    MultiLoraBatchData,
     prepare_4d_causal_attention_mask,
 )
 from mlora.utils import copy_parameters
@@ -351,7 +351,7 @@ class GLMSelfAttention(LLMAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        input_args: MultiLoraBatchData,
+        input_args: LLMModelInput,
         attention_mask: Optional[torch.Tensor] = None,
     ):
         # hidden_states: [batch, sequence, hidden_size]
@@ -493,7 +493,7 @@ class GLMMLP(LLMFeedForward):
         }
 
     def _batch_forward(
-        self, data: torch.Tensor, input_args: MultiLoraBatchData
+        self, data: torch.Tensor, input_args: LLMModelInput
     ) -> torch.Tensor:
         # [b, sq, h] -> [b, sq, 4hp]
         intermediate_parallel = self.dense_h_to_4h(data, input_args)
@@ -554,7 +554,7 @@ class GLMBlock(LLMDecoder):
         self,
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
-        input_args: MultiLoraBatchData,
+        input_args: LLMModelInput,
     ):
         # hidden_states: [b, s, h]
 

@@ -18,8 +18,8 @@ from mlora.common import (
     LLMFeedForward,
     LLMForCausalLM,
     LLMModelArgs,
+    LLMModelInput,
     Masks,
-    MultiLoraBatchData,
     _flash_attn_available,
     apply_rotary_emb,
     get_unpad_data,
@@ -129,7 +129,7 @@ class PhiAttention(LLMAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        input_args: MultiLoraBatchData,
+        input_args: LLMModelInput,
         attention_mask: Optional[torch.Tensor] = None,
     ):
         batch_size, max_seq_len, _ = hidden_states.shape
@@ -289,7 +289,7 @@ class PhiFlashAttention2(PhiAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        input_args: MultiLoraBatchData,
+        input_args: LLMModelInput,
         attention_mask: Optional[torch.Tensor] = None,
     ):
         batch_size, max_seq_len, _ = hidden_states.shape
@@ -369,7 +369,7 @@ class PhiMLP(LLMFeedForward):
         }
 
     def _batch_forward(
-        self, hidden_states: torch.Tensor, input_args: MultiLoraBatchData
+        self, hidden_states: torch.Tensor, input_args: LLMModelInput
     ) -> torch.Tensor:
         hidden_states = self.fc1_.forward(hidden_states, input_args)
         hidden_states = self.act_(hidden_states)
@@ -452,7 +452,7 @@ class PhiDecoderLayer(LLMDecoder):
         self,
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
-        input_args: MultiLoraBatchData,
+        input_args: LLMModelInput,
     ):
         residual = hidden_states
         hidden_states = self.input_layernorm_(hidden_states)
