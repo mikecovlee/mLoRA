@@ -135,14 +135,14 @@ class RotaryEmbedding(torch.nn.Module):
 
 @torch.jit.script
 def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Tensor:
-    # x: [sq, batch, projection_size, heads_num]
-    sq, np = x.size(0), x.size(2)
+    # x: [b, np, sq, hn]
+    b, np, sq, hn = x.size(0), x.size(1), x.size(2), x.size(3)
     rot_dim = rope_cache.shape[-2] * 2
     x, x_pass = x[..., :rot_dim], x[..., rot_dim:]
     # truncate to support variable sizes
     rope_cache = rope_cache[:sq]
-    xshaped = x.reshape(sq, -1, np, rot_dim // 2, 2)
-    rope_cache = rope_cache.view(sq, -1, 1, xshaped.size(3), 2)
+    xshaped = x.reshape(b, np, sq, rot_dim // 2, 2)
+    rope_cache = rope_cache.view(-1, 1, sq, xshaped.size(3), 2)
     x_out2 = torch.stack(
         [
             xshaped[..., 0] * rope_cache[..., 0] - xshaped[..., 1] * rope_cache[..., 1],
@@ -247,7 +247,7 @@ class CoreAttention(torch.nn.Module):
         # Raw attention scores. [b * np, sq, sk]
         matmul_result = torch.baddbmm(
             matmul_input_buffer,
-            query_layer,    # [b * np, sq, hn]
+            query_layer,  # [b * np, sq, hn]
             key_layer.transpose(1, 2),  # [b * np, hn, sk]
             beta=0.0,
             alpha=(1.0 / self.norm_factor),
@@ -447,15 +447,10 @@ class GLMSelfAttention(LLMAttention):
         # =============================================
         #                   QKV Layer
         # =============================================
-        # Attention heads [b, sq, h] --> [b, sq, (np * 3 * hn)]
+        # Attention heads [b, sq, h] --> [b, sq, (3 * np * hn)]
         mixed_x_layer = self.query_key_value(hidden_states, input_args)
         # Split the tensor into query, key, and value tensors.
         (query_layer, key_layer, value_layer) = self._split_qkv_tensor(mixed_x_layer)
-
-        # Apply relative positional encoding (rotary embedding).
-        if self.rotary_pos_emb is not None:
-            query_layer = apply_rotary_pos_emb(query_layer, self.rotary_pos_emb)
-            key_layer = apply_rotary_pos_emb(key_layer, self.rotary_pos_emb)
 
         # Swap positions of `sequence` and `num_partitions`.
         # [b, sq, np, hn] -> [b, np, sq, hn]
@@ -463,6 +458,11 @@ class GLMSelfAttention(LLMAttention):
             layer.transpose(1, 2)
             for layer in [query_layer, key_layer, value_layer]
         )
+
+        # Apply relative positional encoding (rotary embedding).
+        if self.rotary_pos_emb is not None:
+            query_layer = apply_rotary_pos_emb(query_layer, self.rotary_pos_emb)
+            key_layer = apply_rotary_pos_emb(key_layer, self.rotary_pos_emb)
 
         if self.multi_query_attention:
             # Expand the kv(group * hidden_size) -> (n_head * hidden_size).
