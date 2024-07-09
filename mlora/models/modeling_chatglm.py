@@ -7,7 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mlora.backends import get_backend
+from mlora.backends import get_backend, _backend
+from mlora.utils import copy_parameters, is_package_available
 from mlora.common import (
     CHECKPOINT_CLASSES,
     FeedForward,
@@ -19,9 +20,19 @@ from mlora.common import (
     LLMModelArgs,
     LLMModelInput,
     Masks,
+    _flash_attn_available,
     prepare_4d_causal_attention_mask,
+    get_unpad_data,
 )
-from mlora.utils import copy_parameters
+
+try:
+    from transformers.utils import is_flash_attn_greater_or_equal_2_10, is_flash_attn_2_available
+
+    if is_flash_attn_2_available():
+        from flash_attn import flash_attn_func, flash_attn_varlen_func
+        from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
+except:
+    pass
 
 
 @dataclass
@@ -188,6 +199,7 @@ class CoreAttention(torch.nn.Module):
         if self.apply_query_key_layer_scaling:
             self.attention_softmax_in_fp32 = True
         self.layer_number = max(1, layer_number)
+        self.is_casual = True
 
         projection_size = config.kv_channels * config.n_heads_
 
@@ -206,24 +218,24 @@ class CoreAttention(torch.nn.Module):
         self.attention_dropout = torch.nn.Dropout(config.attention_dropout)
 
     def forward(self, query_layer, key_layer, value_layer, attention_mask):
-        # Raw attention scores
-
         # [b, np, sq, sk]
         output_size = (
+            query_layer.size(0),
             query_layer.size(1),
             query_layer.size(2),
-            query_layer.size(0),
-            key_layer.size(0),
+            key_layer.size(2),
         )
 
-        # [sq, b, np, hn] -> [sq, b * np, hn]
+        # query_layer: [b, np, sq, hn] -> [b * np, sq, hn]
         query_layer = query_layer.view(
-            output_size[2], output_size[0] * output_size[1], -1
+            output_size[0] * output_size[1], output_size[2], -1
         )
-        # [sk, b, np, hn] -> [sk, b * np, hn]
-        key_layer = key_layer.view(output_size[3], output_size[0] * output_size[1], -1)
+        # key_layer: [b, np, sk, hn] -> [b * np, sk, hn]
+        key_layer = key_layer.view(
+            output_size[0] * output_size[1], output_size[3], -1
+        )
 
-        # pre-allocting input tensor: [b * np, sq, sk]
+        # pre-allocating input tensor: [b * np, sq, sk]
         matmul_input_buffer = torch.empty(
             output_size[0] * output_size[1],
             output_size[2],
@@ -235,8 +247,8 @@ class CoreAttention(torch.nn.Module):
         # Raw attention scores. [b * np, sq, sk]
         matmul_result = torch.baddbmm(
             matmul_input_buffer,
-            query_layer.transpose(0, 1),  # [b * np, sq, hn]
-            key_layer.transpose(0, 1).transpose(1, 2),  # [b * np, hn, sk]
+            query_layer,    # [b * np, sq, hn]
+            key_layer.transpose(1, 2),  # [b * np, hn, sk]
             beta=0.0,
             alpha=(1.0 / self.norm_factor),
         )
@@ -277,41 +289,44 @@ class CoreAttention(torch.nn.Module):
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.attention_dropout(attention_probs)
-        # =========================
-        # Context layer. [sq, b, hp]
-        # =========================
 
-        # value_layer -> context layer.
-        # [sk, b, np, hn] --> [b, np, sq, hn]
-
+        # query layer shape: [b * np, sq, hn]
+        # value layer shape: [b, np, sk, hn]
+        # attention shape: [b, np, sq, sk]
         # context layer shape: [b, np, sq, hn]
-        output_size = (
-            value_layer.size(1),
-            value_layer.size(2),
-            query_layer.size(0),
-            value_layer.size(3),
-        )
-        # change view [sk, b * np, hn]
-        value_layer = value_layer.view(
-            value_layer.size(0), output_size[0] * output_size[1], -1
-        )
+        output_size = (value_layer.size(0), value_layer.size(1), query_layer.size(1), value_layer.size(3))
+        # change view [b * np, sk, hn]
+        value_layer = value_layer.view(output_size[0] * output_size[1], value_layer.size(2), -1)
         # change view [b * np, sq, sk]
-        attention_probs = attention_probs.view(
-            output_size[0] * output_size[1], output_size[2], -1
-        )
+        attention_probs = attention_probs.view(output_size[0] * output_size[1], output_size[2], -1)
         # matmul: [b * np, sq, hn]
-        context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
+        context_layer = torch.bmm(attention_probs, value_layer)
         # change view [b, np, sq, hn]
         context_layer = context_layer.view(*output_size)
-        # [b, np, sq, hn] --> [sq, b, np, hn]
-        context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
-        # [sq, b, np, hn] --> [sq, b, hp]
-        new_context_layer_shape = context_layer.size()[:-2] + (
-            self.hidden_size_per_partition,
-        )
-        context_layer = context_layer.view(*new_context_layer_shape)
+        # [b, np, sq, hn] --> [b, sq, np, hn]
+        context_layer = context_layer.transpose(1, 2).contiguous()
+        # [b, sq, np, hn] --> [b, sq, hp]
+        new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
+        context_layer = context_layer.reshape(*new_context_layer_shape)
 
         return context_layer
+
+
+class SdpaAttention(CoreAttention):
+    # TODO:
+    pass
+
+
+class FlashAttention2(CoreAttention):
+    # TODO:
+    pass
+
+
+CORE_ATEENTION_CLASSES = {
+    "eager": CoreAttention,
+    "sdpa": SdpaAttention,
+    "flash_attention_2": FlashAttention2,
+}
 
 
 class GLMSelfAttention(LLMAttention):
@@ -326,19 +341,30 @@ class GLMSelfAttention(LLMAttention):
         super(GLMSelfAttention, self).__init__()
         self.layer_idx = max(1, layer_idx)
 
+        self.projection_size = config.kv_channels * config.n_heads_
+
         # Per attention head and per-partition values.
         self.hidden_size_per_attention_head = (
             config.kv_channels * config.n_heads_ // config.n_heads_
         )
         self.num_attention_heads_per_partition = config.n_heads_
         self.multi_query_attention = config.multi_query_attention
+        self.qkv_hidden_size = 3 * self.projection_size
+
         if self.multi_query_attention:
             self.num_multi_query_groups_per_partition = config.multi_query_group_num
+            self.qkv_hidden_size = (
+                self.projection_size + 2 * self.hidden_size_per_attention_head
+                * self.num_multi_query_groups_per_partition
+            )
 
         # QKV layer.
         self.query_key_value = Linear(base_layer=qkv_layer, device=config.device_)
         # Core attention layer.
-        self.core_attention = CoreAttention(config=config, layer_number=self.layer_idx)
+        self.core_attention = CORE_ATEENTION_CLASSES[config.attn_implementation_](
+            config, self.layer_idx
+        )
+
         # Dense layer.
         self.dense = Linear(base_layer=dense_layer, device=config.device_)
 
@@ -348,23 +374,7 @@ class GLMSelfAttention(LLMAttention):
     def state_dict(self) -> Dict[str, Linear]:
         return {"qkv_proj": self.query_key_value, "dense": self.dense}
 
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        input_args: LLMModelInput,
-        attention_mask: Optional[torch.Tensor] = None,
-    ):
-        # hidden_states: [batch, sequence, hidden_size]
-
-        # =============================================
-        #                   QKV Layer
-        # =============================================
-
-        # Attention heads [b, sq, h] --> [b, sq, (np * 3 * hn)]
-        mixed_x_layer = self.query_key_value(hidden_states, input_args)
-        # Swap positions of sequence and batch dimensions.
-        mixed_x_layer = mixed_x_layer.transpose(0, 1).contiguous()
-
+    def _split_qkv_tensor(self, mixed_x_layer) -> Tuple[torch.Tensor, ...]:
         if self.multi_query_attention:
             (query_layer, key_layer, value_layer) = mixed_x_layer.split(
                 [
@@ -377,7 +387,7 @@ class GLMSelfAttention(LLMAttention):
                 ],
                 dim=-1,
             )
-            # q:[seq,bacth,heads,per_attion]  k,v:[seq,bacth,multi_query_group,per_attion]
+
             query_layer = query_layer.view(
                 query_layer.size()[:-1]
                 + (
@@ -399,58 +409,68 @@ class GLMSelfAttention(LLMAttention):
                     self.hidden_size_per_attention_head,
                 )
             )
+
         else:
+            # [batch, sequence, heads_per_part, 3 * hidden_size_per_head]]
             new_tensor_shape = mixed_x_layer.size()[:-1] + (
                 self.num_attention_heads_per_partition,
                 3 * self.hidden_size_per_attention_head,
             )
             mixed_x_layer = mixed_x_layer.view(*new_tensor_shape)
 
-            # [sq, b, np, 3 * per_attention] -> 3*[seq,batch,heads,per_attetion]
+            # [batch, sequence, heads_per_part, 3 * hidden_size_per_head] ->
+            # 3 * [batch, sequence, heads_per_part, hidden_size_per_head]
             (query_layer, key_layer, value_layer) = split_tensor_along_last_dim(
                 mixed_x_layer, 3
             )
+        return query_layer, key_layer, value_layer
+
+    def _repeat_kv(self, layer, n_rep):
+        layer = layer.unsqueeze(2)
+        layer = layer.expand(
+            -1, -1, n_rep, -1, -1
+        )
+        layer = layer.contiguous().view(
+            layer.size()[:1] + (self.num_attention_heads_per_partition,)
+            + layer.size()[3:]
+        )
+        return layer
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        input_args: LLMModelInput,
+        attention_mask: Optional[torch.Tensor] = None,
+    ):
+        # hidden_states: [batch, sequence, hidden_size]
+
+        # =============================================
+        #                   QKV Layer
+        # =============================================
+        # Attention heads [b, sq, h] --> [b, sq, (np * 3 * hn)]
+        mixed_x_layer = self.query_key_value(hidden_states, input_args)
+        # Split the tensor into query, key, and value tensors.
+        (query_layer, key_layer, value_layer) = self._split_qkv_tensor(mixed_x_layer)
 
         # Apply relative positional encoding (rotary embedding).
         if self.rotary_pos_emb is not None:
             query_layer = apply_rotary_pos_emb(query_layer, self.rotary_pos_emb)
             key_layer = apply_rotary_pos_emb(key_layer, self.rotary_pos_emb)
 
-        # Expand the kv(group*hidden_size) -> (n_head*hidden_size).
-        # kv :[sq,b,group_num,hidden_size] -> [sq, b, group, head/group, hidden_size] -> [sq, b, heads,hidden_size]
+        # Swap positions of `sequence` and `num_partitions`.
+        # [b, sq, np, hn] -> [b, np, sq, hn]
+        query_layer, key_layer, value_layer = (
+            layer.transpose(1, 2)
+            for layer in [query_layer, key_layer, value_layer]
+        )
+
         if self.multi_query_attention:
-            key_layer = key_layer.unsqueeze(-2)
-            key_layer = key_layer.expand(
-                -1,
-                -1,
-                -1,
-                self.num_attention_heads_per_partition
-                // self.num_multi_query_groups_per_partition,
-                -1,
-            )
-            key_layer = key_layer.contiguous().view(
-                key_layer.size()[:2]
-                + (
-                    self.num_attention_heads_per_partition,
-                    self.hidden_size_per_attention_head,
-                )
-            )
-            value_layer = value_layer.unsqueeze(-2)
-            value_layer = value_layer.expand(
-                -1,
-                -1,
-                -1,
-                self.num_attention_heads_per_partition
-                // self.num_multi_query_groups_per_partition,
-                -1,
-            )
-            value_layer = value_layer.contiguous().view(
-                value_layer.size()[:2]
-                + (
-                    self.num_attention_heads_per_partition,
-                    self.hidden_size_per_attention_head,
-                )
-            )
+            # Expand the kv(group * hidden_size) -> (n_head * hidden_size).
+            # kv: [b, s, group_num, hidden_size]-> [b, s, heads, hidden_size]
+            n_rep = (self.num_attention_heads_per_partition //
+                     self.num_multi_query_groups_per_partition)
+            key_layer = self._repeat_kv(key_layer, n_rep)
+            value_layer = self._repeat_kv(value_layer, n_rep)
 
         # =============================================
         #               Core Attention Layer
@@ -462,8 +482,6 @@ class GLMSelfAttention(LLMAttention):
         # =============================================
         #                   Dense Layer
         # =============================================
-        # Swap positions of sq and b back.
-        context_layer = context_layer.transpose(0, 1).contiguous()
         output = self.dense(context_layer, input_args)
 
         return output
