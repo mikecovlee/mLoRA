@@ -266,11 +266,12 @@ class Lora(nn.Module):
         self.use_dora_: bool = config.use_dora_
         self.magnitude_vector_: nn.Parameter = None
 
-    def _get_weight_norm(self, weight) -> torch.Tensor:
+    def _get_weight_norm(self, dtype: torch.dtype = torch.float32) -> torch.Tensor:
         # calculate L2 norm of weight matrix, column-wise
+        weight = dequantize_module_weight(self.base_layer_).to(dtype)
         lora_weight = self.lora_b_.weight @ self.lora_a_.weight
-        weight = weight.to(torch.float32) + self.scaling_ * lora_weight
-        weight_norm = torch.linalg.norm(weight, dim=1, dtype=torch.float32)
+        weight = weight + self.scaling_ * lora_weight
+        weight_norm = torch.linalg.norm(weight, dim=1).to(weight.dtype)
         return weight_norm
 
     def reset_parameters(self, lora_tensor=(None, None)) -> None:
@@ -296,17 +297,16 @@ class Lora(nn.Module):
                 self.lora_b_.weight.copy_(lora_tensor[1])
 
         if self.use_dora_:
-            weight = dequantize_module_weight(self.base_layer_)
-            weight_norm = self._get_weight_norm(weight)
-            self.magnitude_vector_ = nn.Parameter(weight_norm, requires_grad=True)
+            self.magnitude_vector_ = nn.Parameter(
+                self._get_weight_norm(), requires_grad=True
+            )
 
     def apply_dora(
         self,
         residual: torch.Tensor,
         result_lora: torch.Tensor,
     ):
-        weight = dequantize_module_weight(self.base_layer_)
-        weight_norm = self._get_weight_norm(weight).detach()
+        weight_norm = self._get_weight_norm().detach()
         mag_norm_scale = (self.magnitude_vector_ / weight_norm).view(1, -1)
         return mag_norm_scale * residual + mag_norm_scale * result_lora
 
