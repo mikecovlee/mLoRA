@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mlora.backends import get_backend, _backend
-from mlora.utils import copy_parameters, is_package_available
+from mlora.backends import get_backend
+from mlora.utils import copy_parameters
 from mlora.common import (
     CHECKPOINT_CLASSES,
     FeedForward,
@@ -20,19 +20,18 @@ from mlora.common import (
     LLMModelArgs,
     LLMModelInput,
     Masks,
-    _flash_attn_available,
     prepare_4d_causal_attention_mask,
     get_unpad_data,
 )
 
-try:
-    from transformers.utils import is_flash_attn_greater_or_equal_2_10, is_flash_attn_2_available
+from transformers.utils import (
+    is_flash_attn_greater_or_equal_2_10,
+    is_flash_attn_2_available,
+)
 
-    if is_flash_attn_2_available():
-        from flash_attn import flash_attn_func, flash_attn_varlen_func
-        from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
-except:
-    pass
+if is_flash_attn_2_available():
+    from flash_attn import flash_attn_func, flash_attn_varlen_func
+    from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
 
 
 @dataclass
@@ -136,7 +135,7 @@ class RotaryEmbedding(torch.nn.Module):
 @torch.jit.script
 def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Tensor:
     # x: [b, np, sq, hn]
-    b, np, sq, hn = x.size(0), x.size(1), x.size(2), x.size(3)
+    b, np, sq = x.size(0), x.size(1), x.size(2)
     rot_dim = rope_cache.shape[-2] * 2
     x, x_pass = x[..., :rot_dim], x[..., rot_dim:]
     # truncate to support variable sizes
@@ -231,9 +230,7 @@ class CoreAttention(torch.nn.Module):
             output_size[0] * output_size[1], output_size[2], -1
         )
         # key_layer: [b, np, sk, hn] -> [b * np, sk, hn]
-        key_layer = key_layer.view(
-            output_size[0] * output_size[1], output_size[3], -1
-        )
+        key_layer = key_layer.view(output_size[0] * output_size[1], output_size[3], -1)
 
         # pre-allocating input tensor: [b * np, sq, sk]
         matmul_input_buffer = torch.empty(
@@ -294,11 +291,20 @@ class CoreAttention(torch.nn.Module):
         # value layer shape: [b, np, sk, hn]
         # attention shape: [b, np, sq, sk]
         # context layer shape: [b, np, sq, hn]
-        output_size = (value_layer.size(0), value_layer.size(1), query_layer.size(1), value_layer.size(3))
+        output_size = (
+            value_layer.size(0),
+            value_layer.size(1),
+            query_layer.size(1),
+            value_layer.size(3),
+        )
         # change view [b * np, sk, hn]
-        value_layer = value_layer.view(output_size[0] * output_size[1], value_layer.size(2), -1)
+        value_layer = value_layer.view(
+            output_size[0] * output_size[1], value_layer.size(2), -1
+        )
         # change view [b * np, sq, sk]
-        attention_probs = attention_probs.view(output_size[0] * output_size[1], output_size[2], -1)
+        attention_probs = attention_probs.view(
+            output_size[0] * output_size[1], output_size[2], -1
+        )
         # matmul: [b * np, sq, hn]
         context_layer = torch.bmm(attention_probs, value_layer)
         # change view [b, np, sq, hn]
@@ -306,7 +312,9 @@ class CoreAttention(torch.nn.Module):
         # [b, np, sq, hn] --> [b, sq, np, hn]
         context_layer = context_layer.transpose(1, 2).contiguous()
         # [b, sq, np, hn] --> [b, sq, hp]
-        new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
+        new_context_layer_shape = context_layer.size()[:-2] + (
+            self.hidden_size_per_partition,
+        )
         context_layer = context_layer.reshape(*new_context_layer_shape)
 
         return context_layer
@@ -316,8 +324,7 @@ class FlashAttention2(CoreAttention):
     def __init__(self, *args, **kwargs):
         assert is_flash_attn_2_available(), "Flash Attention is not available."
         super().__init__(*args, **kwargs)
-        self._flash_attn_uses_top_left_mask = \
-            not is_flash_attn_greater_or_equal_2_10()
+        self._flash_attn_uses_top_left_mask = not is_flash_attn_greater_or_equal_2_10()
 
     def forward(self, query_layer, key_layer, value_layer, attention_mask):
         query_states = query_layer.transpose(1, 2)
@@ -341,7 +348,7 @@ class FlashAttention2(CoreAttention):
                 value_states,
                 indices_q,
                 cu_seq_lens,
-                max_seq_lens
+                max_seq_lens,
             ) = self._unpad_input(
                 query_states, key_states, value_states, attention_mask, query_length
             )
@@ -372,9 +379,11 @@ class FlashAttention2(CoreAttention):
                 value_states,
                 dropout,
                 softmax_scale=None,
-                causal=causal
+                causal=causal,
             )
-        attn_output = attn_output.reshape(batch_size, query_length, self.hidden_size_per_partition).contiguous()
+        attn_output = attn_output.reshape(
+            batch_size, query_length, self.hidden_size_per_partition
+        ).contiguous()
         return attn_output
 
     def _unpad_input(
@@ -413,11 +422,12 @@ class FlashAttention2(CoreAttention):
         else:
             # The -q_len: slice assumes left padding.
             attention_mask = attention_mask[:, -query_length:]
-            (query_layer,
-             indices_q,
-             cu_seqlens_q,
-             max_seqlen_in_batch_q,
-             ) = unpad_input(query_layer, attention_mask)
+            (
+                query_layer,
+                indices_q,
+                cu_seqlens_q,
+                max_seqlen_in_batch_q,
+            ) = unpad_input(query_layer, attention_mask)
 
         return (
             query_layer,
@@ -460,7 +470,9 @@ class GLMSelfAttention(LLMAttention):
         if self.multi_query_attention:
             self.num_multi_query_groups_per_partition = config.multi_query_group_num
             self.qkv_hidden_size = (
-                self.projection_size + 2 * self.hidden_size_per_attention_head
+                self.projection_size
+                + 2
+                * self.hidden_size_per_attention_head
                 * self.num_multi_query_groups_per_partition
             )
 
@@ -533,11 +545,10 @@ class GLMSelfAttention(LLMAttention):
 
     def _repeat_kv(self, layer, n_rep):
         layer = layer.unsqueeze(2)
-        layer = layer.expand(
-            -1, -1, n_rep, -1, -1
-        )
+        layer = layer.expand(-1, -1, n_rep, -1, -1)
         layer = layer.contiguous().view(
-            layer.size()[:1] + (self.num_attention_heads_per_partition,)
+            layer.size()[:1]
+            + (self.num_attention_heads_per_partition,)
             + layer.size()[3:]
         )
         return layer
@@ -561,8 +572,7 @@ class GLMSelfAttention(LLMAttention):
         # Swap positions of `sequence` and `num_partitions`.
         # [b, sq, np, hn] -> [b, np, sq, hn]
         query_layer, key_layer, value_layer = (
-            layer.transpose(1, 2)
-            for layer in [query_layer, key_layer, value_layer]
+            layer.transpose(1, 2) for layer in [query_layer, key_layer, value_layer]
         )
 
         # Apply relative positional encoding (rotary embedding).
@@ -573,8 +583,10 @@ class GLMSelfAttention(LLMAttention):
         if self.multi_query_attention:
             # Expand the kv(group * hidden_size) -> (n_head * hidden_size).
             # kv: [b, s, group_num, hidden_size]-> [b, s, heads, hidden_size]
-            n_rep = (self.num_attention_heads_per_partition //
-                     self.num_multi_query_groups_per_partition)
+            n_rep = (
+                self.num_attention_heads_per_partition
+                // self.num_multi_query_groups_per_partition
+            )
             key_layer = self._repeat_kv(key_layer, n_rep)
             value_layer = self._repeat_kv(value_layer, n_rep)
 
@@ -857,8 +869,9 @@ class GLMForCausalLM(LLMForCausalLM):
         device: str = get_backend().default_device_name(),
     ):
         assert not use_sliding_window, "ChatGLM model does not support SWA."
-        assert attn_impl == "eager" or "flash_attn", \
-            "ChatGLM only supports eager or flash attention."
+        assert (
+            attn_impl == "eager" or "flash_attn"
+        ), "ChatGLM only supports eager or flash attention."
 
         # Get the config from LLM model and input args.
         llm_config = llm_model.config
