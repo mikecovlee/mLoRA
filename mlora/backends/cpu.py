@@ -5,8 +5,6 @@ import torch
 
 from .common import BasicBackend
 
-_cpu_bf16_supported = None
-
 
 class CPUBackend(BasicBackend):
     def __init__(self) -> None:
@@ -23,18 +21,6 @@ class CPUBackend(BasicBackend):
 
     def is_initialized(self) -> bool:
         return False
-
-    def is_bf16_supported(self) -> bool:
-        # TODO: change to official implementation
-        global _cpu_bf16_supported
-        if _cpu_bf16_supported is None:
-            try:
-                torch.ones(5, dtype=torch.bfloat16, device="cpu")
-                _cpu_bf16_supported = True
-            except TypeError:
-                _cpu_bf16_supported = False
-
-        return _cpu_bf16_supported
 
     def allow_tf32(self, mode: bool):
         assert not mode, "Enabling tf32 for CPU."

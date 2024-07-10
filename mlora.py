@@ -23,6 +23,7 @@ import torch
 import mlora
 import logging
 import argparse
+from transformers.utils import is_flash_attn_2_available
 from typing import Dict, Tuple, List, Union
 
 # Command Line Arguments
@@ -222,7 +223,7 @@ if __name__ == "__main__":
     is_train = not args.inference and not args.evaluate
 
     if args.attn_impl is None:
-        if mlora.get_backend().device_name() == "cuda" and mlora.common._flash_attn_available:
+        if is_flash_attn_2_available():
             args.attn_impl = "flash_attn"
         else:
             args.attn_impl = "eager"
