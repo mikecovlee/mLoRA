@@ -22,14 +22,19 @@ class CPUBackend(BasicBackend):
     def is_initialized(self) -> bool:
         return False
 
+    def empty_cache(self):
+        pass
+
     def allow_tf32(self, mode: bool):
         assert not mode, "Enabling tf32 for CPU."
 
     def set_rng_state(self, device: int, state: torch.Tensor):
-        raise RuntimeError("Can not setting rng state for CPU.")
+        assert device == 0
+        torch.set_rng_state(state)
 
     def get_rng_state(self, device: int):
-        raise RuntimeError("Can not setting rng state for CPU.")
+        assert device == 0
+        return torch.get_rng_state()
 
     @contextlib.contextmanager
     def fork_rng(self, rng_devices: list):
