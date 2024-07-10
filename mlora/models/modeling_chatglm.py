@@ -321,12 +321,11 @@ class CoreFlashAttention2(CoreAttention):
         assert _flash_attn_available, "Flash Attention is not available."
         super().__init__(*args, **kwargs)
 
-    def forward(self, query_layer, key_layer, value_layer, attention_mask):
+    def forward(self, query_layer, key_layer, value_layer, attention_mask, dropout=0.0):
         query_states = query_layer.transpose(1, 2)
         key_states = key_layer.transpose(1, 2)
         value_states = value_layer.transpose(1, 2)
         batch_size, query_length = query_states.shape[:2]
-        dropout = self.config.attention_dropout if self.training else 0.0
 
         # Contains at least one padding token in the sequence
         if attention_mask is not None:
