@@ -193,7 +193,7 @@ class GLMLayerNorm(torch.nn.Module):
 class CoreAttention(torch.nn.Module):
     def __init__(self, config: GLMConfig, layer_number):
         super(CoreAttention, self).__init__()
-
+        self.config = config
         self.apply_query_key_layer_scaling = config.apply_query_key_layer_scaling
         self.attention_softmax_in_fp32 = config.attention_softmax_in_fp32
         if self.apply_query_key_layer_scaling:
@@ -319,6 +319,7 @@ class SdpaAttention(CoreAttention):
 
 class FlashAttention2(CoreAttention):
     def __init__(self, *args, **kwargs):
+        assert is_flash_attn_2_available(), "Flash Attention is not available."
         super().__init__(*args, **kwargs)
         self._flash_attn_uses_top_left_mask = \
             not is_flash_attn_greater_or_equal_2_10()
@@ -326,10 +327,10 @@ class FlashAttention2(CoreAttention):
     def forward(self, query_layer, key_layer, value_layer, attention_mask):
         query_states = query_layer.transpose(1, 2)
         key_states = key_layer.transpose(1, 2)
-        value_states = attention_mask.transpose(1, 2)
+        value_states = value_layer.transpose(1, 2)
         batch_size, query_length = query_states.shape[:2]
         if not self._flash_attn_uses_top_left_mask:
-            causal = self.is_causal
+            causal = self.is_casual
         else:
             # TODO: Remove the `query_length != 1` check once
             #  Flash Attention for RoCm is bumped to 2.1.
@@ -436,7 +437,7 @@ class FlashAttention2(CoreAttention):
 CORE_ATTENTION_CLASSES = {
     "eager": CoreAttention,
     "sdpa": SdpaAttention,
-    "flash_attention_2": FlashAttention2,
+    "flash_attn": FlashAttention2,
 }
 
 
@@ -862,7 +863,8 @@ class GLMForCausalLM(LLMForCausalLM):
         device: str = get_backend().default_device_name(),
     ):
         assert not use_sliding_window, "ChatGLM model does not support SWA."
-        assert attn_impl == "eager", "ChatGLM only supports eager attention."
+        assert attn_impl == "eager" or "flash_attn", \
+            "ChatGLM only supports eager or flash attention."
 
         # Get the config from LLM model and input args.
         llm_config = llm_model.config
