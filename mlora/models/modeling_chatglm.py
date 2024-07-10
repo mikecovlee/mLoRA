@@ -312,11 +312,6 @@ class CoreAttention(torch.nn.Module):
         return context_layer
 
 
-class SdpaAttention(CoreAttention):
-    # TODO:
-    pass
-
-
 class FlashAttention2(CoreAttention):
     def __init__(self, *args, **kwargs):
         assert is_flash_attn_2_available(), "Flash Attention is not available."
@@ -436,7 +431,6 @@ class FlashAttention2(CoreAttention):
 
 CORE_ATTENTION_CLASSES = {
     "eager": CoreAttention,
-    "sdpa": SdpaAttention,
     "flash_attn": FlashAttention2,
 }
 
