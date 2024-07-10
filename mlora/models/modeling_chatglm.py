@@ -194,7 +194,7 @@ class CoreAttention(torch.nn.Module):
         if self.apply_query_key_layer_scaling:
             self.attention_softmax_in_fp32 = True
         self.layer_number = max(1, layer_number)
-        self.is_casual = True
+        self.is_causal = True
 
         projection_size = config.kv_channels * config.n_heads_
 
@@ -316,24 +316,16 @@ class CoreAttention(torch.nn.Module):
         return context_layer
 
 
-class FlashAttention2(CoreAttention):
+class CoreFlashAttention2(CoreAttention):
     def __init__(self, *args, **kwargs):
-        assert is_flash_attn_2_available(), "Flash Attention is not available."
+        assert _flash_attn_available, "Flash Attention is not available."
         super().__init__(*args, **kwargs)
-        self._flash_attn_uses_top_left_mask = not is_flash_attn_greater_or_equal_2_10()
 
     def forward(self, query_layer, key_layer, value_layer, attention_mask):
         query_states = query_layer.transpose(1, 2)
         key_states = key_layer.transpose(1, 2)
         value_states = value_layer.transpose(1, 2)
         batch_size, query_length = query_states.shape[:2]
-        if not self._flash_attn_uses_top_left_mask:
-            causal = self.is_casual
-        else:
-            # TODO: Remove the `query_length != 1` check once
-            #  Flash Attention for RoCm is bumped to 2.1.
-            #  For details, please see the comment in LlamaFlashAttention2 __init__.
-            causal = self.is_causal and query_length != 1
         dropout = self.config.attention_dropout if self.training else 0.0
 
         # Contains at least one padding token in the sequence
@@ -362,7 +354,7 @@ class FlashAttention2(CoreAttention):
                 max_seqlen_k=max_seqlen_in_batch_k,
                 dropout_p=dropout,
                 softmax_scale=None,
-                causal=causal,
+                causal=self.is_causal,
             )
 
             attn_output = pad_input(
@@ -375,8 +367,9 @@ class FlashAttention2(CoreAttention):
                 value_states,
                 dropout,
                 softmax_scale=None,
-                causal=causal,
+                causal=self.is_causal,
             )
+
         attn_output = attn_output.reshape(
             batch_size, query_length, self.hidden_size_per_partition
         ).contiguous()
@@ -437,7 +430,7 @@ class FlashAttention2(CoreAttention):
 
 CORE_ATTENTION_CLASSES = {
     "eager": CoreAttention,
-    "flash_attn": FlashAttention2,
+    "flash_attn": CoreFlashAttention2,
 }
 
 
