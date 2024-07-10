@@ -318,11 +318,122 @@ class SdpaAttention(CoreAttention):
 
 
 class FlashAttention2(CoreAttention):
-    # TODO:
-    pass
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._flash_attn_uses_top_left_mask = \
+            not is_flash_attn_greater_or_equal_2_10()
+
+    def forward(self, query_layer, key_layer, value_layer, attention_mask):
+        query_states = query_layer.transpose(1, 2)
+        key_states = key_layer.transpose(1, 2)
+        value_states = attention_mask.transpose(1, 2)
+        batch_size, query_length = query_states.shape[:2]
+        if not self._flash_attn_uses_top_left_mask:
+            causal = self.is_causal
+        else:
+            # TODO: Remove the `query_length != 1` check once
+            #  Flash Attention for RoCm is bumped to 2.1.
+            #  For details, please see the comment in LlamaFlashAttention2 __init__.
+            causal = self.is_causal and query_length != 1
+        dropout = self.config.attention_dropout if self.training else 0.0
+
+        # Contains at least one padding token in the sequence
+        if attention_mask is not None:
+            (
+                query_states,
+                key_states,
+                value_states,
+                indices_q,
+                cu_seq_lens,
+                max_seq_lens
+            ) = self._unpad_input(
+                query_states, key_states, value_states, attention_mask, query_length
+            )
+
+            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+
+            attn_output_unpad = flash_attn_varlen_func(
+                query_states,
+                key_states,
+                value_states,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k=cu_seqlens_k,
+                max_seqlen_q=max_seqlen_in_batch_q,
+                max_seqlen_k=max_seqlen_in_batch_k,
+                dropout_p=dropout,
+                softmax_scale=None,
+                causal=causal,
+            )
+
+            attn_output = pad_input(
+                attn_output_unpad, indices_q, batch_size, query_length
+            )
+        else:
+            attn_output = flash_attn_func(
+                query_states,
+                key_states,
+                value_states,
+                dropout,
+                softmax_scale=None,
+                causal=causal
+            )
+        attn_output = attn_output.reshape(batch_size, query_length, self.hidden_size_per_partition).contiguous()
+        return attn_output
+
+    def _unpad_input(
+        self, query_layer, key_layer, value_layer, attention_mask, query_length
+    ):
+        indices_k, cu_seqlens_k, max_seqlen_in_batch_k = get_unpad_data(attention_mask)
+        batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
+
+        key_layer = index_first_axis(
+            key_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim),
+            indices_k,
+        )
+        value_layer = index_first_axis(
+            value_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim),
+            indices_k,
+        )
+        if query_length == kv_seq_len:
+            query_layer = index_first_axis(
+                query_layer.reshape(
+                    batch_size * kv_seq_len,
+                    self.num_attention_heads_per_partition,
+                    head_dim,
+                ),
+                indices_k,
+            )
+            cu_seqlens_q = cu_seqlens_k
+            max_seqlen_in_batch_q = max_seqlen_in_batch_k
+            indices_q = indices_k
+        elif query_length == 1:
+            max_seqlen_in_batch_q = 1
+            cu_seqlens_q = torch.arange(
+                batch_size + 1, dtype=torch.int32, device=query_layer.device
+            )  # There is a memcpy here, that is very bad.
+            indices_q = cu_seqlens_q[:-1]
+            query_layer = query_layer.squeeze(1)
+        else:
+            # The -q_len: slice assumes left padding.
+            attention_mask = attention_mask[:, -query_length:]
+            (query_layer,
+             indices_q,
+             cu_seqlens_q,
+             max_seqlen_in_batch_q,
+             ) = unpad_input(query_layer, attention_mask)
+
+        return (
+            query_layer,
+            key_layer,
+            value_layer,
+            indices_q,
+            (cu_seqlens_q, cu_seqlens_k),
+            (max_seqlen_in_batch_q, max_seqlen_in_batch_k),
+        )
 
 
-CORE_ATEENTION_CLASSES = {
+CORE_ATTENTION_CLASSES = {
     "eager": CoreAttention,
     "sdpa": SdpaAttention,
     "flash_attention_2": FlashAttention2,
@@ -361,7 +472,7 @@ class GLMSelfAttention(LLMAttention):
         # QKV layer.
         self.query_key_value = Linear(base_layer=qkv_layer, device=config.device_)
         # Core attention layer.
-        self.core_attention = CORE_ATEENTION_CLASSES[config.attn_implementation_](
+        self.core_attention = CORE_ATTENTION_CLASSES[config.attn_implementation_](
             config, self.layer_idx
         )
 
