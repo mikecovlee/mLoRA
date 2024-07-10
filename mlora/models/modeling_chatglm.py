@@ -8,7 +8,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from mlora.backends import get_backend
-from mlora.utils import copy_parameters
 from mlora.common import (
     CHECKPOINT_CLASSES,
     FeedForward,
@@ -20,16 +19,13 @@ from mlora.common import (
     LLMModelArgs,
     LLMModelInput,
     Masks,
-    prepare_4d_causal_attention_mask,
+    _flash_attn_available,
     get_unpad_data,
+    prepare_4d_causal_attention_mask,
 )
+from mlora.utils import copy_parameters
 
-from transformers.utils import (
-    is_flash_attn_greater_or_equal_2_10,
-    is_flash_attn_2_available,
-)
-
-if is_flash_attn_2_available():
+if _flash_attn_available:
     from flash_attn import flash_attn_func, flash_attn_varlen_func
     from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
 
