@@ -26,7 +26,7 @@ This is an actively developing fork of the official m-LoRA repository, focusing 
 |---------|---------|------------------------|---------------|-----------------|
 | Linux   | CUDA    | FP32, FP16, TF32, BF16 | 8bit and 4bit | &check;         |
 | Windows | CUDA    | FP32, FP16, TF32, BF16 | 8bit and 4bit | -               |
-| macOS   | MPS     | FP32, FP16             | &cross;       | &cross;         |
+| macOS   | MPS     | FP32, FP16, BF16       | &cross;       | &cross;         |
 | All     | CPU     | FP32, FP16, BF16       | &cross;       | &cross;         |
 
 You can use the `MLORA_BACKEND_TYPE` environment variable to force m-LoRA to use a specific backend. For example, if you want m-LoRA to run only on CPU, you can set `MLORA_BACKEND_TYPE=CPU` before importing `mlora`.
