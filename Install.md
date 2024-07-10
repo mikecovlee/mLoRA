@@ -20,7 +20,7 @@
 ### Steps
 
 ```bash
-docker run --gpus all -it --rm mikecovlee/mlora bash
+docker run --gpus all -it --rm mikecovlee/mlora
 ```
 
 You can check all available tags from: [mikecovlee/mlora/tags](https://hub.docker.com/r/mikecovlee/mlora/tags). Currently, we only provide a Linux image for the x86_64 (amd64) architecture.
