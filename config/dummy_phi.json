@@ -26,7 +26,7 @@
                 "fc1": false,
                 "fc2": false
             },
-            "data": "data/dummy_data.json",
+            "data": "data/dummy_sft_data.json",
             "prompt": "template/template_demo.json",
             "group_by_length": false,
             "expand_side": "right"
@@ -50,7 +50,7 @@
                 "fc1": false,
                 "fc2": false
             },
-            "data": "data/dummy_data.json",
+            "data": "data/dummy_sft_data.json",
             "prompt": "template/template_demo.json",
             "group_by_length": false,
             "expand_side": "right"

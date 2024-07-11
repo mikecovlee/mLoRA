@@ -118,7 +118,7 @@ You can conveniently utilize m-LoRA via `launch.py`. The following example demon
 
 ```bash
 # Generating configuration
-python launch.py gen --template lora --tasks ./data/dummy_data.json
+python launch.py gen --template lora --tasks ./data/dummy_sft_data.json
 # Running the training task
 python launch.py run --base_model TinyLlama/TinyLlama_v1.1
 # Try with gradio web ui

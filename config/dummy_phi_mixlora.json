@@ -27,7 +27,7 @@
             },
             "routing_strategy": "mixtral",
             "num_experts": 8,
-            "data": "data/dummy_data.json",
+            "data": "data/dummy_sft_data.json",
             "prompt": "template/template_demo.json",
             "group_by_length": false,
             "expand_side": "right"
@@ -55,7 +55,7 @@
             "expert_capacity": 200,
             "ffn_dropout": 0.1,
             "num_experts": 8,
-            "data": "data/dummy_data.json",
+            "data": "data/dummy_sft_data.json",
             "prompt": "template/template_demo.json",
             "group_by_length": false,
             "expand_side": "right"

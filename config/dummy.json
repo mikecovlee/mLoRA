@@ -27,7 +27,7 @@
                 "w2_proj": false,
                 "w3_proj": false
             },
-            "data": "data/dummy_data.json",
+            "data": "data/dummy_sft_data.json",
             "prompt": "template/template_demo.json",
             "group_by_length": false,
             "expand_side": "right"
@@ -52,7 +52,7 @@
                 "w2_proj": false,
                 "w3_proj": false
             },
-            "data": "data/dummy_data.json",
+            "data": "data/dummy_sft_data.json",
             "prompt": "template/template_demo.json",
             "group_by_length": false,
             "expand_side": "right"

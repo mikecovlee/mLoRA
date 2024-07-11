@@ -171,7 +171,8 @@ data/*
 !data/AlpacaDataCleaned/
 template/*
 !data/data_demo.json
-!data/dummy_data.json
+!data/dummy_sft_data.json
+!data/dummy_dpo_data.json
 !template/test_data_demo.json
 !template/template_demo.json
 data_train.json
