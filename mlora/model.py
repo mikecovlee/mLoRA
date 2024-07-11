@@ -126,7 +126,7 @@ class ClassificationOutputLayer(LLMOutput):
 class OutputLayer(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.layers_: torch.ModuleDict = {}
+        self.layers_: Dict[str, torch.nn.Module] = {}
 
     def forward(
         self, data: torch.Tensor, input_args: LLMModelInput
@@ -485,6 +485,32 @@ class LLMModel(torch.nn.Module):
                     )
 
         return lora_weight_dict
+
+    def unload_lora_weight(
+        self, lora_name: str
+    ) -> Tuple[LoraConfig, Dict[str, torch.Tensor]]:
+        assert lora_name in self.adapter_configs_, "adapter not exist"
+        lora_weight = self.get_lora_weight_dict(lora_name)
+        self.output_.layers_.pop(lora_name)
+        for transformer_layer in self.model_.layers_:
+            lora_layer_list = []
+            for layer in transformer_layer.state_dict().values():
+                lora_layer_list.append(layer)
+
+            for lora_layer in lora_layer_list:
+                if lora_name in lora_layer.loras_:
+                    lora_layer.loras_.pop(lora_name, None)
+                elif lora_name in transformer_layer.mlp_.moes_:
+                    for expert_idx in range(
+                        transformer_layer.mlp_.moes_[lora_name].experts_
+                    ):
+                        moe_lora_name = f"moe.{lora_name}.experts.{expert_idx}"
+                        lora_layer.loras_.pop(moe_lora_name, None)
+
+                    transformer_layer.mlp_.moes_.pop(lora_name)
+
+        lora_config = self.adapter_configs_.pop(lora_name)
+        return lora_config, lora_weight
 
     def load_adapter_weight(self, path: str, adapter_name: str = None):
         if adapter_name is None:

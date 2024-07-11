@@ -47,6 +47,8 @@ def main(base_model: str,
         print(f"\n{'='*10}\n")
         print(prompt)
         print(f"\n{'='*10}\n")
+    
+    model.unload_lora_weight(adapter_name)
 
 
 if __name__ == "__main__":
