@@ -58,6 +58,16 @@ class CasualOutputLayer(LLMOutput):
         )
 
 
+class DPOOutputLayer(CasualOutputLayer):
+    def __init__(self, vocab_size: int, weight: torch.nn.Linear):
+        super().__init__(vocab_size, weight)
+
+    def loss(
+        self, input_ids: torch.Tensor, output_logits: torch.Tensor, labels
+    ) -> torch.Tensor:
+        pass
+
+
 class ClassificationOutputLayer(LLMOutput):
     def __init__(
         self,
