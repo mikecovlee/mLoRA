@@ -13,3 +13,5 @@ pandas
 fire
 black
 isort
+notebook
+ipywidgets
