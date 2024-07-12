@@ -434,7 +434,7 @@ class LLMModel(torch.nn.Module):
             )
 
         self.output_.layers_[config.adapter_name] = output_layer
-        if type(config) == AdapterConfig:
+        if type(config) is AdapterConfig:
             assert weight is None, "can not load basic adapter with weight"
             return
 
