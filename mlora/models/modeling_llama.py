@@ -63,6 +63,7 @@ class LlamaAttention(LLMAttention):
             args.dim_ // args.n_heads_,
             max_position_embeddings=args.max_seq_len_,
             base=args.rope_theta_,
+            device=args.device_,
         )
         # config
         self.layer_idx_ = idx
