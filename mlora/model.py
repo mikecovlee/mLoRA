@@ -334,7 +334,7 @@ class LLMModel(torch.nn.Module):
                 if router_logits[idx] is not None:
                     all_router_logits[idx].append(router_logits[idx])
 
-        hidden_states = self.model_.norm_(hidden_states)
+        hidden_states = self.model_.norm(hidden_states)
 
         # calculate loss
         output = self.output_(hidden_states, input_args)
@@ -355,14 +355,14 @@ class LLMModel(torch.nn.Module):
                 labels[start_idx:end_idx],
             )
             output_data.loss_fn_ = None
-            if not input_args.output_router_logits_ or len(router_logits[idx]) == 0:
+            if not input_args.output_router_logits_ or len(all_router_logits[idx]) == 0:
                 continue
             # compute router loss when router logits is available
             loss_fn = router_loss_factory(
                 self.adapter_configs_[output_data.adapter_name]
             )
             if loss_fn is not None:
-                output_data.aux_loss = loss_fn(router_logits[idx], attention_mask)
+                output_data.aux_loss = loss_fn(all_router_logits[idx], attention_mask)
 
         return output
 
