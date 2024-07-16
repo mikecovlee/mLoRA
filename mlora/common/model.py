@@ -56,6 +56,16 @@ class LLMDecoder(metaclass=ABCMeta):
         pass
 
 
+class LLMMultiModalProjector(metaclass=ABCMeta):
+    @classmethod
+    def state_dict(self) -> Dict[str, torch.nn.Module]:
+        return {}
+
+    @classmethod
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        pass
+
+
 class LLMOutput(metaclass=ABCMeta):
     @classmethod
     def state_dict(self) -> Dict[str, torch.nn.Module]:

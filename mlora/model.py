@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 import torch
 from huggingface_hub import snapshot_download
 from transformers import AutoModelForCausalLM
+from transformers.activations import ACT2FN
 
 from mlora.backends import get_backend
 from mlora.common import (
@@ -16,6 +17,7 @@ from mlora.common import (
     LLMModelArgs,
     LLMModelInput,
     LLMModelOutput,
+    LLMMultiModalProjector,
     LLMOutput,
     LoraConfig,
     MixConfig,
@@ -30,6 +32,32 @@ if is_package_available("bitsandbytes"):
     from transformers import BitsAndBytesConfig
 else:
     from mlora.utils import BitsAndBytesConfig
+
+
+class ImageProjector(LLMMultiModalProjector):
+    def __init__(
+        self,
+        dim: int,
+        vision_dim: int,
+        activation: str,
+    ) -> None:
+        super().__init__()
+
+        self.vision_proj_ = torch.nn.Linear(vision_dim, dim, bias=True)
+        self.act_ = ACT2FN[activation]
+        self.text_proj_ = torch.nn.Linear(dim, dim, bias=True)
+
+    def state_dict(self) -> Dict[str, torch.nn.Module]:
+        return {
+            "vision_proj": self.vision_proj_.weight,
+            "text_proj": self.text_proj_.weight,
+        }
+
+    def forward(self, image_features: torch.Tensor) -> torch.Tensor:
+        hidden_states = self.vision_proj_(image_features)
+        hidden_states = self.act_(hidden_states)
+        hidden_states = self.text_proj_(hidden_states)
+        return hidden_states
 
 
 class CasualOutputLayer(LLMOutput):

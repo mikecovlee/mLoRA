@@ -31,7 +31,14 @@ from .mix_lora import (
 )
 
 # Basic Abstract Class
-from .model import LLMAttention, LLMDecoder, LLMFeedForward, LLMForCausalLM, LLMOutput
+from .model import (
+    LLMAttention,
+    LLMDecoder,
+    LLMFeedForward,
+    LLMForCausalLM,
+    LLMMultiModalProjector,
+    LLMOutput,
+)
 
 # Model Arguments
 from .modelargs import (
@@ -87,6 +94,7 @@ __all__ = [
     "LLMModelOutput",
     "LLMBatchConfig",
     "LLMModelInput",
+    "LLMMultiModalProjector",
     "AdapterConfig",
     "LoraConfig",
     "MixConfig",
