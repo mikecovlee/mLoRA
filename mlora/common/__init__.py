@@ -41,6 +41,7 @@ from .model import (
     LLMDecoder,
     LLMFeedForward,
     LLMForCausalLM,
+    LLMMultiModalProjector,
     LLMOutput,
 )
 
@@ -99,6 +100,7 @@ __all__ = [
     "LLMModelOutput",
     "LLMBatchConfig",
     "LLMModelInput",
+    "LLMMultiModalProjector",
     "AdapterConfig",
     "LoraConfig",
     "MixConfig",
