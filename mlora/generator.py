@@ -4,7 +4,7 @@ from typing import Callable, List, Tuple, Union
 
 import torch
 
-from mlora.common import LLMBatchConfig, LLMModelInput, Tokens
+from mlora.common import DynamicCache, LLMBatchConfig, LLMModelInput, Tokens
 from mlora.model import LLMModel
 from mlora.prompter import Prompter
 from mlora.tokenizer import Tokenizer
@@ -150,6 +150,7 @@ def generate(
     tokenizer: Tokenizer,
     configs: List[GenerateConfig],
     max_gen_len: int = 128,
+    use_cache: bool = True,
     stream_callback: Callable = None,
 ):
 
@@ -182,6 +183,8 @@ def generate(
     assert max_tokens_len <= model.config_.max_seq_len_
     total_len = min(model.config_.max_seq_len_, max_gen_len + max_tokens_len)
 
+    past_key_values = DynamicCache() if use_cache else None
+
     tokens = torch.full(
         (batch_size, total_len), tokenizer.pad_id_, dtype=torch.int64, device=device
     )
@@ -195,10 +198,9 @@ def generate(
         input_data = LLMModelInput(
             batch_configs_=batch_data_config,
             batch_tokens_=tokens[:, prev_pos:cur_pos].tolist(),
-            diagonal_pos_=prev_pos + 1,
             inference_mode_=True,
         )
-        outputs = model.forward(input_data)
+        outputs = model.forward(input_data, past_key_values)
         for output in outputs:
             config = config_dict[output.adapter_name]
             start_idx = output.batch_start_idx_
@@ -233,5 +235,8 @@ def generate(
 
         if all(stop_reached):
             break
+
+        if use_cache:
+            prev_pos = cur_pos
 
     return gen_outputs(configs, tokenizer, raw_prompts, tokens, max_gen_len)

@@ -1,51 +1,59 @@
 import math
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 
-from .modelargs import Masks
+from .cache import Cache, StaticCache
 
 
-# input_tokens shape is: batch_size * seq_len
-#   default: upper triangular matrix like below, i.e. diagonal = 1
-#            0 -inf -inf
-#            0    0 -inf
-#            0    0    0
-# additional_mask: batch_size * seq_len
-#   default: is None the matrix like default, if set true, the mask metric will be -inf
-#   example: [[True, False, False]]
-#           -inf -inf -inf
-#           -inf    0 -inf
-#           -inf    0    0
 def prepare_4d_causal_attention_mask(
-    input_tokens: torch.Tensor,
-    n_heads: int,
-    device: str,
-    additional_mask: List[Masks] = None,
-    diagonal: int = 1,
-    dtype: torch.dtype = torch.float32,
+    attention_mask: torch.Tensor,
+    input_tensor: torch.Tensor,
+    cache_position: torch.Tensor,
+    past_key_values: Cache,
 ) -> torch.Tensor:
-    batch_size, seq_len = input_tokens.shape
-
-    TORCH_MIN_VALUE = torch.finfo(torch.float32).min
-    mask = torch.full(
-        (batch_size, n_heads, seq_len, seq_len),
-        TORCH_MIN_VALUE,
-        device=device,
-        dtype=torch.float32,
+    past_seen_tokens = (
+        past_key_values.get_seq_length() if past_key_values is not None else 0
     )
-    mask = torch.triu(mask, diagonal=diagonal)
+    using_static_cache = isinstance(past_key_values, StaticCache)
 
-    if additional_mask is not None:
-        masks_metric = ~torch.tensor(additional_mask, dtype=torch.bool, device=device)
-        masks_metric = masks_metric.view(batch_size, 1, 1, seq_len)
-        masks_metric = masks_metric.expand(-1, n_heads, seq_len, -1)
-        mask = torch.masked_fill(mask, masks_metric, TORCH_MIN_VALUE)
+    dtype, device = input_tensor.dtype, input_tensor.device
+    min_dtype = torch.finfo(dtype).min
+    sequence_length = input_tensor.shape[1]
+    if using_static_cache:
+        target_length = past_key_values.get_max_length()
+    else:
+        target_length = (
+            attention_mask.shape[-1]
+            if isinstance(attention_mask, torch.Tensor)
+            else past_seen_tokens + sequence_length + 1
+        )
 
-    mask.requires_grad_(False)
+    causal_mask = torch.full(
+        (sequence_length, target_length),
+        fill_value=min_dtype,
+        dtype=dtype,
+        device=device,
+    )
+    if sequence_length != 1:
+        causal_mask = torch.triu(causal_mask, diagonal=1)
+    causal_mask *= torch.arange(target_length, device=device) > cache_position.reshape(
+        -1, 1
+    )
+    causal_mask = causal_mask[None, None, :, :].expand(input_tensor.shape[0], 1, -1, -1)
+    if attention_mask is not None:
+        causal_mask = causal_mask.clone()  # copy to contiguous memory for in-place edit
+        mask_length = attention_mask.shape[-1]
+        padding_mask = (
+            causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :]
+        )
+        padding_mask = padding_mask == 0
+        causal_mask[:, :, :, :mask_length] = causal_mask[
+            :, :, :, :mask_length
+        ].masked_fill(padding_mask, min_dtype)
 
-    return mask.to(device=device, dtype=dtype)
+    return causal_mask
 
 
 def precompute_rope_angle(

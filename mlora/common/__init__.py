@@ -8,6 +8,14 @@ from .attention import (
     rotate_half,
     scaled_dot_product_attention,
 )
+from .cache import (
+    Cache,
+    DynamicCache,
+    HybridCache,
+    SinkCache,
+    SlidingWindowCache,
+    StaticCache,
+)
 from .checkpoint import (
     CHECKPOINT_CLASSES,
     CheckpointOffloadFunction,
@@ -58,6 +66,12 @@ __all__ = [
     "apply_rotary_emb",
     "get_unpad_data",
     "scaled_dot_product_attention",
+    "Cache",
+    "DynamicCache",
+    "HybridCache",
+    "SinkCache",
+    "SlidingWindowCache",
+    "StaticCache",
     "CheckpointOffloadFunction",
     "CheckpointRecomputeFunction",
     "CHECKPOINT_CLASSES",
