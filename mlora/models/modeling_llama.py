@@ -1,4 +1,3 @@
-import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -27,6 +26,7 @@ from mlora.common import (
     LLMModelArgs,
     LLMModelInput,
     prepare_4d_causal_attention_mask,
+    scaled_dot_product_attention,
 )
 from mlora.common.mix_lora import _mixtral_slice_tensor
 from mlora.utils import copy_parameters
@@ -126,22 +126,11 @@ class LlamaAttention(LLMAttention):
         xk = repeat_kv(xk, self.n_rep_)
         xv = repeat_kv(xv, self.n_rep_)
 
-        attn_weights = torch.matmul(xq, xk.transpose(2, 3)) / math.sqrt(self.head_dim_)
-        if attention_mask is not None:  # no matter the length, we just slice it
-            causal_mask = attention_mask[:, :, :, : xk.shape[-2]]
-            attn_weights = attn_weights + causal_mask
-
-        # upcast attention to fp32
-        attn_weights = nn.functional.softmax(
-            attn_weights, dim=-1, dtype=torch.float32
-        ).to(xq.dtype)
-        attn_output = torch.matmul(attn_weights, xv)
-        attn_output = attn_output.transpose(1, 2).contiguous()
-
-        attn_output = attn_output.reshape(batch_size, max_seq_len, -1)
+        attention_score = scaled_dot_product_attention(xq, xk, xv, attention_mask)
+        attention_score = attention_score.reshape(batch_size, max_seq_len, -1)
 
         # get output attention score
-        return self.wo_.forward(attn_output, input_args)
+        return self.wo_.forward(attention_score, input_args)
 
 
 class LlamaFlashAttention(LlamaAttention):

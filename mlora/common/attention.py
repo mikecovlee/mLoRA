@@ -125,19 +125,20 @@ def get_unpad_data(attention_mask: torch.Tensor):
 
 @torch.jit.script
 def scaled_dot_product_attention(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
+    query_states: torch.Tensor,
+    key_states: torch.Tensor,
+    value_states: torch.Tensor,
     attention_mask: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    attention_score = torch.matmul(query, key.transpose(2, 3)) / math.sqrt(
-        query.size(-1)
-    )
+    attention_score = torch.matmul(
+        query_states, key_states.transpose(2, 3)
+    ) / math.sqrt(query_states.size(-1))
     if attention_mask is not None:
-        attention_score = attention_score + attention_mask
+        causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+        attention_score = attention_score + causal_mask
     attention_score = F.softmax(attention_score, dim=-1, dtype=torch.float32).to(
-        value.dtype
+        value_states.dtype
     )
-    attention_score = torch.matmul(attention_score, value)
+    attention_score = torch.matmul(attention_score, value_states)
     attention_score = attention_score.transpose(1, 2).contiguous()
     return attention_score
