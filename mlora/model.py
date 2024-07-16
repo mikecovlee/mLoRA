@@ -7,7 +7,6 @@ from typing import Dict, List, Optional, Tuple
 import torch
 from huggingface_hub import snapshot_download
 from transformers import AutoModelForCausalLM
-from transformers.activations import ACT2FN
 
 from mlora.backends import get_backend
 from mlora.common import (
@@ -19,11 +18,9 @@ from mlora.common import (
     LLMModelConfig,
     LLMModelInput,
     LLMModelOutput,
-    LLMMultiModalProjector,
     LLMOutput,
     LoraConfig,
     MixConfig,
-    VisionConfig,
     lora_config_factory,
     router_loss_factory,
 )
@@ -35,34 +32,6 @@ if is_package_available("bitsandbytes"):
     from transformers import BitsAndBytesConfig
 else:
     from mlora.utils import BitsAndBytesConfig
-
-
-class ImageProjector(LLMMultiModalProjector):
-    def __init__(self, model_config: LLMModelArgs, vision_config: VisionConfig) -> None:
-        super().__init__()
-
-        self.vision_proj_ = torch.nn.Linear(
-            vision_config.dim_,
-            model_config.dim_,
-            bias=True,
-            device=model_config.device_,
-        )
-        self.act_ = ACT2FN[vision_config.hidden_act_]
-        self.text_proj_ = torch.nn.Linear(
-            model_config.dim_, model_config.dim_, bias=True, device=model_config.device_
-        )
-
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
-        return {
-            "vision_proj": self.vision_proj_.weight,
-            "text_proj": self.text_proj_.weight,
-        }
-
-    def forward(self, image_features: torch.Tensor) -> torch.Tensor:
-        hidden_states = self.vision_proj_(image_features)
-        hidden_states = self.act_(hidden_states)
-        hidden_states = self.text_proj_(hidden_states)
-        return hidden_states
 
 
 class CasualOutputLayer(LLMOutput):
