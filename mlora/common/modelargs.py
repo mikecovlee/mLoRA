@@ -27,6 +27,15 @@ class TokenizerArgs:
 
 
 @dataclass
+class VisionConfig:
+    dim_: int = 4096
+    token_index_: int = 32000
+    hidden_act_: str = "gelu"
+    feature_select_strategy_: str = "default"
+    feature_layer_: int = -2
+
+
+@dataclass
 class LLMModelArgs:
     name_or_path_: str = ""
     device_: str = ""
