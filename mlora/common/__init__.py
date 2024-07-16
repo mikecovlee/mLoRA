@@ -58,6 +58,7 @@ from .modelargs import (
     Masks,
     MixConfig,
     Tokens,
+    VisionConfig,
     lora_config_factory,
 )
 
@@ -97,6 +98,7 @@ __all__ = [
     "Masks",
     "DataClass",
     "LLMModelConfig",
+    "VisionConfig",
     "LLMModelOutput",
     "LLMBatchConfig",
     "LLMModelInput",

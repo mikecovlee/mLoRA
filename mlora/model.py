@@ -23,6 +23,7 @@ from mlora.common import (
     LLMOutput,
     LoraConfig,
     MixConfig,
+    VisionConfig,
     lora_config_factory,
     router_loss_factory,
 )
@@ -37,17 +38,19 @@ else:
 
 
 class ImageProjector(LLMMultiModalProjector):
-    def __init__(
-        self,
-        dim: int,
-        vision_dim: int,
-        activation: str,
-    ) -> None:
+    def __init__(self, model_config: LLMModelArgs, vision_config: VisionConfig) -> None:
         super().__init__()
 
-        self.vision_proj_ = torch.nn.Linear(vision_dim, dim, bias=True)
-        self.act_ = ACT2FN[activation]
-        self.text_proj_ = torch.nn.Linear(dim, dim, bias=True)
+        self.vision_proj_ = torch.nn.Linear(
+            vision_config.dim_,
+            model_config.dim_,
+            bias=True,
+            device=model_config.device_,
+        )
+        self.act_ = ACT2FN[vision_config.hidden_act_]
+        self.text_proj_ = torch.nn.Linear(
+            model_config.dim_, model_config.dim_, bias=True, device=model_config.device_
+        )
 
     def state_dict(self) -> Dict[str, torch.nn.Module]:
         return {
