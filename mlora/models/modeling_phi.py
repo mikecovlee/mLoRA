@@ -23,7 +23,7 @@ from mlora.common import (
     LLMDecoder,
     LLMFeedForward,
     LLMForCausalLM,
-    LLMModelArgs,
+    LLMModelConfig,
     LLMModelInput,
     prepare_4d_causal_attention_mask,
     scaled_dot_product_attention,
@@ -37,7 +37,7 @@ if is_flash_attn_2_available():
 
 
 @dataclass
-class PhiConfig(LLMModelArgs):
+class PhiConfig(LLMModelConfig):
     partial_rotary_factor_: float = 0.5
     layer_norm_eps_: float = 1e-05
     resid_pdrop_: float = 0.0

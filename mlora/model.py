@@ -15,7 +15,7 @@ from mlora.common import (
     Cache,
     LLMDecoder,
     LLMForCausalLM,
-    LLMModelArgs,
+    LLMModelConfig,
     LLMModelInput,
     LLMModelOutput,
     LLMOutput,
@@ -155,7 +155,7 @@ class OutputLayer(torch.nn.Module):
 
 def init_lora_layer_weight(
     layer: LLMDecoder,
-    args: LLMModelArgs,
+    args: LLMModelConfig,
     config: LoraConfig,
     weight: Optional[Dict[str, torch.Tensor]],
 ):
@@ -228,7 +228,7 @@ def init_lora_layer_weight(
 class LLMModel(torch.nn.Module):
     def __init__(self, model: LLMForCausalLM):
         super().__init__()
-        args: LLMModelArgs = model.config_
+        args: LLMModelConfig = model.config_
         if args.vocab_size_ >= torch.finfo(args.dtype_).max:
             logging.warn(
                 f"vocab_size >= max({args.dtype_}), consider load model with higher precision."

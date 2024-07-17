@@ -17,7 +17,7 @@ from mlora.common import (
     LLMDecoder,
     LLMFeedForward,
     LLMForCausalLM,
-    LLMModelArgs,
+    LLMModelConfig,
     LLMModelInput,
 )
 from mlora.common.mix_lora import _mixtral_slice_tensor
@@ -29,7 +29,7 @@ if is_flash_attn_2_available():
 
 
 @dataclass
-class GLMConfig(LLMModelArgs):
+class GLMConfig(LLMModelConfig):
     post_layer_norm: bool = True
     rmsnorm: bool = True
     layernorm_epsilon: float = 1e-5

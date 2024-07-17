@@ -4,7 +4,7 @@ from .common import (
     Cache,
     LLMBatchConfig,
     LLMForCausalLM,
-    LLMModelArgs,
+    LLMModelConfig,
     LLMModelInput,
     LLMModelOutput,
     LoraConfig,
@@ -32,7 +32,7 @@ setup_logging()
 __all__ = [
     "Cache",
     "cache_factory",
-    "LLMModelArgs",
+    "LLMModelConfig",
     "LLMModelOutput",
     "LLMForCausalLM",
     "LLMBatchConfig",

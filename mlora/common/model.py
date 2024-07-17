@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
-from .modelargs import LLMModelArgs, LLMModelInput
+from .modelargs import LLMModelConfig, LLMModelInput
 
 
 @dataclass
@@ -160,7 +160,7 @@ class LLMForCausalLM(metaclass=ABCMeta):
         return "dynamic"
 
     @classmethod
-    def model_config(self) -> LLMModelArgs:
+    def model_config(self) -> LLMModelConfig:
         pass
 
     @staticmethod

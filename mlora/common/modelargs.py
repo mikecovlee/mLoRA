@@ -19,15 +19,7 @@ class DataClass:
 
 
 @dataclass
-class TokenizerArgs:
-    vocab_size_: int = -1
-    bos_id_: int = -1
-    eos_id_: int = -1
-    pad_id_: int = -1
-
-
-@dataclass
-class LLMModelArgs:
+class LLMModelConfig:
     name_or_path_: str = ""
     device_: str = ""
     dim_: int = 4096

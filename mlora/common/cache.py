@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 
 from .model import Cache
-from .modelargs import LLMModelArgs
+from .modelargs import LLMModelConfig
 
 
 class DynamicCache(Cache):
@@ -146,25 +146,9 @@ class DynamicCache(Cache):
 
 
 class StaticCache(Cache):
-    """
-    Static Cache class to be used with `torch.compile(model)`.
-
-    Parameters:
-        config (`LLMModelArgs):
-            The configuration file defining the shape-related attributes required to initialize the static cache.
-        max_batch_size (`int`):
-            The maximum batch size with which the model will be used.
-        max_cache_len (`int`):
-            The maximum sequence length with which the model will be used.
-        device (`torch.device`):
-            The device on which the cache should be initialized. Should be the same as the layer.
-        dtype (*optional*, defaults to `torch.float32`):
-            The default `dtype` to use when initializing the layer.
-    """
-
     def __init__(
         self,
-        config: LLMModelArgs,
+        config: LLMModelConfig,
         max_batch_size: int,
         max_cache_len: int,
         device,
@@ -259,7 +243,7 @@ class StaticCache(Cache):
 class SlidingWindowCache(StaticCache):
     def __init__(
         self,
-        config: LLMModelArgs,
+        config: LLMModelConfig,
         max_batch_size: int,
         max_cache_len: int,
         device,
@@ -333,7 +317,7 @@ class SlidingWindowCache(StaticCache):
 class HybridCache(Cache):
     def __init__(
         self,
-        config: LLMModelArgs,
+        config: LLMModelConfig,
         max_batch_size,
         max_cache_len,
         device="cpu",
@@ -497,7 +481,7 @@ cache_dict = {
 
 def cache_factory(
     cache_implementation: str,
-    config: LLMModelArgs,
+    config: LLMModelConfig,
     max_batch_size: int,
     max_cache_len: int,
 ):
