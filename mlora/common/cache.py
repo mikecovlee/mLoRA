@@ -477,7 +477,7 @@ class HybridCache(Cache):
         return self.max_cache_len
 
     def get_seq_length(self, layer_idx: Optional[int] = 0):
-        return 0
+        return None
 
     def reset(self):
         """Resets the cache values while preserving the objects"""
@@ -490,7 +490,7 @@ class HybridCache(Cache):
 cache_dict = {
     "dynamic": DynamicCache,
     "static": StaticCache,
-    "sliding-window": SlidingWindowCache,
+    "sliding_window": SlidingWindowCache,
     "hybrid": HybridCache,
 }
 
@@ -505,6 +505,9 @@ def cache_factory(
         cache_implementation in cache_dict
     ), f"Unknown cache type. {cache_implementation}"
     logging.info(f"Use {cache_implementation} as cache implementation.")
+    if cache_implementation == "sliding_window":
+        assert hasattr(config, "sliding_window_")
+        max_cache_len = min(config.sliding_window_, max_cache_len)
     return cache_dict[cache_implementation](
         config=config,
         max_batch_size=max_batch_size,
