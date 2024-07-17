@@ -318,7 +318,7 @@ MISTRAL_ATTENTION_CLASSES = {
 
 
 class MistralForCausalLM(LlamaForCausalLM):
-    def __init__(self, config: LlamaConfig) -> None:
+    def __init__(self, config: MistralConfig) -> None:
         super().__init__(config)
 
     @staticmethod

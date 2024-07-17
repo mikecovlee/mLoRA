@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
-from .modelargs import LLMModelInput
+from .modelargs import LLMModelArgs, LLMModelInput
 
 
 @dataclass
@@ -153,6 +153,14 @@ class LLMForCausalLM(metaclass=ABCMeta):
         cache_position: torch.Tensor,
         past_key_values: Optional[Cache],
     ) -> torch.Tensor:
+        pass
+
+    @classmethod
+    def cache_implementation(self) -> str:
+        return "dynamic"
+
+    @classmethod
+    def model_config(self) -> LLMModelArgs:
         pass
 
     @staticmethod

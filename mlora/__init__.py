@@ -1,6 +1,7 @@
 from .backends import get_backend
 from .common import (
     AdapterConfig,
+    Cache,
     LLMBatchConfig,
     LLMForCausalLM,
     LLMModelArgs,
@@ -8,6 +9,7 @@ from .common import (
     LLMModelOutput,
     LoraConfig,
     MixConfig,
+    cache_factory,
     lora_config_factory,
 )
 from .dispatcher import Dispatcher, TrainTask
@@ -28,6 +30,8 @@ assert is_package_available(
 setup_logging()
 
 __all__ = [
+    "Cache",
+    "cache_factory",
     "LLMModelArgs",
     "LLMModelOutput",
     "LLMForCausalLM",

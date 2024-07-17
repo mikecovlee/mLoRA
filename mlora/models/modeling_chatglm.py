@@ -855,6 +855,9 @@ class GLMForCausalLM(LLMForCausalLM):
     ) -> torch.Tensor:
         return self.get_masks(input_tensor, past_key_values, attention_mask)
 
+    def model_config(self) -> GLMConfig:
+        return self.config_
+
     @staticmethod
     def from_pretrained(
         llm_model,

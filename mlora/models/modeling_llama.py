@@ -522,6 +522,9 @@ class LlamaForCausalLM(LLMForCausalLM):
             past_key_values,
         )
 
+    def model_config(self) -> LlamaConfig:
+        return self.config_
+
     @staticmethod
     def from_pretrained(
         llm_model: modeling_llama.LlamaForCausalLM,
