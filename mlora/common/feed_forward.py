@@ -30,7 +30,10 @@ class FeedForward(torch.nn.Module):
 
     # MixLoRA
     def init_moe_weight(
-        self, args: LLMModelConfig, config: MixConfig, gate: Optional[torch.Tensor] = None
+        self,
+        args: LLMModelConfig,
+        config: MixConfig,
+        gate: Optional[torch.Tensor] = None,
     ):
         self.moes_[config.adapter_name] = moe_layer_factory(args, config)
         if gate is None:

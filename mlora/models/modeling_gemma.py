@@ -50,6 +50,13 @@ class GemmaEmbedding(nn.Module):
         return data * normalizer
 
 
+def _patch_hidden_act(config: modeling_gemma.GemmaConfig) -> str:
+    if hasattr(config, "hidden_activation") and config.hidden_activation is not None:
+        return config.hidden_activation
+    else:
+        return config.hidden_act
+
+
 class GemmaForCausalLM(LlamaForCausalLM):
     def __init__(self, config: LlamaConfig) -> None:
         super().__init__(config)
@@ -71,7 +78,7 @@ class GemmaForCausalLM(LlamaForCausalLM):
             n_layers_=llm_config.num_hidden_layers,
             n_heads_=llm_config.num_attention_heads,
             n_kv_heads_=llm_config.num_key_value_heads,
-            hidden_act_=llm_config.hidden_activation,
+            hidden_act_=_patch_hidden_act(llm_config),
             rms_norm_eps_=llm_config.rms_norm_eps,
             max_seq_len_=llm_config.max_position_embeddings,
             rope_theta_=llm_config.rope_theta,
