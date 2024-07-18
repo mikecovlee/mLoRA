@@ -208,6 +208,8 @@ def _dispatch_task_in(
         else:
             per_task_jobs = concurrent_jobs
 
+        per_task_jobs = min(per_task_jobs, config.batch_size)
+
         batch_start_idx = len(input_tokens)
         while per_task_jobs > 0 and len(config.data_) > 0:
             per_task_jobs = per_task_jobs - 1
