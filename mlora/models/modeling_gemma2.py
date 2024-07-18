@@ -1,12 +1,18 @@
+import inspect
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import torch
 import torch.nn as nn
 from transformers.models.gemma2 import modeling_gemma2
-from transformers.models.gemma2.modeling_gemma2 import apply_rotary_pos_emb, repeat_kv
+from transformers.models.gemma2.modeling_gemma2 import (
+    _get_unpad_data,
+    apply_rotary_pos_emb,
+    repeat_kv,
+)
+from transformers.utils import is_flash_attn_2_available
 
-from mlora.backends import get_backend
+from mlora.backends import _backend, get_backend
 from mlora.common import (
     Cache,
     FeedForward,
@@ -21,6 +27,14 @@ from mlora.common import (
 from mlora.models.modeling_gemma import GemmaEmbedding, GemmaRMSNorm
 from mlora.models.modeling_llama import LlamaMLP
 from mlora.utils import copy_parameters
+
+if is_flash_attn_2_available():
+    from flash_attn import flash_attn_func, flash_attn_varlen_func
+    from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
+
+    _flash_supports_window_size = "window_size" in list(
+        inspect.signature(flash_attn_func).parameters
+    )
 
 
 @dataclass
@@ -162,7 +176,7 @@ class Gemma2Attention(LLMAttention):
                 "cache_position": cache_position,
             }
             key_states, value_states = past_key_value.update(
-                key_states, value_states, self.layer_idx, cache_kwargs
+                key_states, value_states, self.layer_idx_, cache_kwargs
             )
 
         key_states = repeat_kv(key_states, self.n_rep_)
@@ -192,9 +206,209 @@ class Gemma2Attention(LLMAttention):
         return self.o_proj_(attn_output, input_args)
 
 
+class Gemma2FlashAttention2(Gemma2Attention):
+    def __init__(
+        self,
+        q_proj: nn.Module,
+        k_proj: nn.Module,
+        v_proj: nn.Module,
+        o_proj: nn.Module,
+        layer_idx: int,
+        config: Gemma2Config,
+    ):
+        assert is_flash_attn_2_available(), "Flash Attention is not available"
+        super().__init__(q_proj, k_proj, v_proj, o_proj, layer_idx, config)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        input_args: LLMModelInput,
+        attention_mask: Optional[torch.Tensor] = None,
+        cache_position: Optional[torch.Tensor] = None,
+        past_key_value: Optional[Cache] = None,
+    ):
+        bsz, q_len, _ = hidden_states.size()
+
+        query_states = self.q_proj_(hidden_states, input_args)
+        key_states = self.k_proj_(hidden_states, input_args)
+        value_states = self.v_proj_(hidden_states, input_args)
+
+        query_states = query_states.view(
+            bsz, q_len, self.n_heads_, self.head_dim_
+        ).transpose(1, 2)
+        key_states = key_states.view(
+            bsz, q_len, self.n_kv_heads_, self.head_dim_
+        ).transpose(1, 2)
+        value_states = value_states.view(
+            bsz, q_len, self.n_kv_heads_, self.head_dim_
+        ).transpose(1, 2)
+
+        cos, sin = self.rotary_emb_(value_states, cache_position.unsqueeze(0))
+        query_states, key_states = apply_rotary_pos_emb(
+            query_states, key_states, cos, sin
+        )
+
+        if past_key_value is not None:
+            cache_kwargs = {
+                "sin": sin,
+                "cos": cos,
+                "sliding_window": self.sliding_window_,
+                "cache_position": cache_position,
+            }
+            key_states, value_states = past_key_value.update(
+                key_states, value_states, self.layer_idx_, cache_kwargs
+            )
+
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
+
+        input_dtype = query_states.dtype
+        if input_dtype == torch.float32:
+            if _backend.is_bf16_supported():
+                target_dtype = torch.bfloat16
+            else:
+                target_dtype = torch.float16
+            query_states = query_states.to(target_dtype)
+            key_states = key_states.to(target_dtype)
+            value_states = value_states.to(target_dtype)
+
+        attn_output = self._flash_attention_forward(
+            query_states,
+            key_states,
+            value_states,
+            attention_mask,
+            q_len,
+            softmax_scale=self.scaling_,
+            softcap=self.config_.attn_logit_softcapping_,
+        )
+
+        attn_output = attn_output.reshape(bsz, q_len, -1).contiguous()
+        attn_output = self.o_proj_(attn_output, input_args)
+
+        return attn_output
+
+    def _flash_attention_forward(
+        self,
+        query_states,
+        key_states,
+        value_states,
+        attention_mask,
+        query_length,
+        dropout=0.0,
+        softmax_scale=None,
+        cache_position=0,
+        softcap=None,
+    ):
+        causal = self.is_causal_
+
+        # TODO this is not compile compatible
+        use_sliding_windows = (
+            _flash_supports_window_size
+            and self.config_.use_sliding_window_
+            and self.sliding_window_ is not None
+            and cache_position > self.sliding_window_
+        )
+        flash_kwargs = {"softcap": softcap}
+        if use_sliding_windows:
+            flash_kwargs.update(
+                {"window_size": (self.sliding_window_, self.sliding_window_)}
+            )
+        # Contains at least one padding token in the sequence
+        if attention_mask is not None:
+            batch_size = query_states.shape[0]
+            (
+                query_states,
+                key_states,
+                value_states,
+                indices_q,
+                cu_seq_lens,
+                max_seq_lens,
+            ) = self._upad_input(
+                query_states, key_states, value_states, attention_mask, query_length
+            )
+
+            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+
+            attn_output_unpad = flash_attn_varlen_func(
+                query_states,
+                key_states,
+                value_states,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k=cu_seqlens_k,
+                max_seqlen_q=max_seqlen_in_batch_q,
+                max_seqlen_k=max_seqlen_in_batch_k,
+                dropout_p=dropout,
+                softmax_scale=softmax_scale,
+                causal=causal,
+                **flash_kwargs,
+            )
+
+            attn_output = pad_input(
+                attn_output_unpad, indices_q, batch_size, query_length
+            )
+        else:
+            attn_output = flash_attn_func(
+                query_states,
+                key_states,
+                value_states,
+                dropout,
+                softmax_scale=softmax_scale,
+                causal=causal,
+            )
+
+        return attn_output
+
+    def _upad_input(
+        self, query_layer, key_layer, value_layer, attention_mask, query_length
+    ):
+        indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(attention_mask)
+        batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
+
+        key_layer = index_first_axis(
+            key_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim),
+            indices_k,
+        )
+        value_layer = index_first_axis(
+            value_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim),
+            indices_k,
+        )
+        if query_length == kv_seq_len:
+            query_layer = index_first_axis(
+                query_layer.reshape(batch_size * kv_seq_len, self.n_heads_, head_dim),
+                indices_k,
+            )
+            cu_seqlens_q = cu_seqlens_k
+            max_seqlen_in_batch_q = max_seqlen_in_batch_k
+            indices_q = indices_k
+        elif query_length == 1:
+            max_seqlen_in_batch_q = 1
+            cu_seqlens_q = torch.arange(
+                batch_size + 1, dtype=torch.int32, device=query_layer.device
+            )  # There is a memcpy here, that is very bad.
+            indices_q = cu_seqlens_q[:-1]
+            query_layer = query_layer.squeeze(1)
+        else:
+            # The -q_len: slice assumes left padding.
+            attention_mask = attention_mask[:, -query_length:]
+            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(
+                query_layer, attention_mask
+            )
+
+        return (
+            query_layer,
+            key_layer,
+            value_layer,
+            indices_q,
+            (cu_seqlens_q, cu_seqlens_k),
+            (max_seqlen_in_batch_q, max_seqlen_in_batch_k),
+        )
+
+
 GEMMA2_ATTENTION_CLASSES = {
     "eager": Gemma2Attention,
-    "flash_attn": None,
+    "flash_attn": Gemma2FlashAttention2,
 }
 
 
@@ -319,6 +533,12 @@ class Gemma2ForCausalLM(LLMForCausalLM):
             cache_position,
             past_key_values,
         )
+
+    def cache_implementation(self) -> str:
+        if self.config_.use_sliding_window_ and self.config_.sliding_window_:
+            return "hybrid"
+        else:
+            return "dynamic"
 
     def model_config(self) -> Gemma2Config:
         return self.config_
