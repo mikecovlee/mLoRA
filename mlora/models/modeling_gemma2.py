@@ -205,9 +205,6 @@ class Gemma2FlashAttention2(Gemma2Attention):
         config: Gemma2Config,
     ):
         assert is_flash_attn_2_available(), "Flash Attention is not available"
-        assert is_package_available(
-            "flash_attn", "2.6.0"
-        ), "Gemma2 requires flash_attn>=2.6.0"
         super().__init__(q_proj, k_proj, v_proj, o_proj, layer_idx, config)
 
     def forward(
@@ -275,7 +272,11 @@ class Gemma2FlashAttention2(Gemma2Attention):
             sliding_window=(
                 self.sliding_window_ if self.config_.use_sliding_window_ else None
             ),
-            softcap=self.config_.attn_logit_softcapping_,
+            softcap=(
+                self.config_.attn_logit_softcapping_
+                if is_package_available("flash_attn", "2.6.0")
+                else None
+            ),
         ).to(input_dtype)
 
         attn_output = attn_output.reshape(bsz, q_len, -1).contiguous()
