@@ -26,6 +26,10 @@ def prepare_4d_causal_attention_mask(
     past_seen_tokens = (
         past_key_values.get_seq_length() if past_key_values is not None else 0
     )
+
+    if past_seen_tokens is None:
+        past_seen_tokens = 0
+
     using_static_cache = isinstance(past_key_values, StaticCache)
 
     dtype, device = input_tensor.dtype, input_tensor.device

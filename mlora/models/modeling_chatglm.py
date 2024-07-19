@@ -315,9 +315,7 @@ class GLMSelfAttention(LLMAttention):
         self.projection_size = config.kv_channels * config.n_heads_
 
         # Per attention head and per-partition values.
-        self.hidden_size_per_attention_head = (
-            config.kv_channels * config.n_heads_ // config.n_heads_
-        )
+        self.hidden_size_per_attention_head = self.projection_size // config.n_heads_
         self.num_attention_heads_per_partition = config.n_heads_
         self.multi_query_attention = config.multi_query_attention
         self.qkv_hidden_size = 3 * self.projection_size
@@ -415,7 +413,10 @@ class GLMSelfAttention(LLMAttention):
 
         if past_key_value is not None:
             key_layer, value_layer = past_key_value.update(
-                key_layer, value_layer, self.layer_idx
+                key_layer,
+                value_layer,
+                self.layer_idx,
+                {"cache_position": cache_position},
             )
 
         if self.multi_query_attention:
@@ -747,6 +748,9 @@ class GLMForCausalLM(LLMForCausalLM):
     ) -> torch.Tensor:
         return self.get_masks(input_tensor, past_key_values, attention_mask)
 
+    def cache_implementation(self) -> str:
+        return None
+
     def model_config(self) -> GLMConfig:
         return self.config_
 
@@ -765,7 +769,9 @@ class GLMForCausalLM(LLMForCausalLM):
             name_or_path_=llm_config._name_or_path,
             device_=device,
             dim_=llm_config.hidden_size,
+            head_dim_=llm_config.hidden_size // llm_config.num_attention_heads,
             n_heads_=llm_config.num_attention_heads,
+            n_kv_heads_=llm_config.multi_query_group_num,
             n_layers_=llm_config.num_layers,
             hidden_dropout_=llm_config.hidden_dropout,
             vocab_size_=llm_config.vocab_size,
