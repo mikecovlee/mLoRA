@@ -18,7 +18,7 @@ dependencies = [
     "datasets",
     "evaluate",
     "accelerate",
-    "transformers==4.42.4",
+    "transformers==4.43.2",
     "sentencepiece",
     "huggingface_hub",
     "scikit-learn",
