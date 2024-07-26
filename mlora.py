@@ -149,8 +149,20 @@ def init_adapter_config(
 
     for lora_config in config["lora"]:
         adapter_name = lora_config["name"]
+        adapter_path = f"{args.dir}{os.sep}{adapter_name}"
+        if not args.load_adapter and os.path.exists(adapter_path):
+            if args.overwrite:
+                logging.warning(
+                    f"Overwriting existed adapter model file: {adapter_path}"
+                )
+            elif not query_yes_no(
+                f"Existed adapter model file detected: {adapter_path}\n" + "Overwrite?"
+            ):
+                logging.info("User canceled training due to file conflict.")
+                exit(0)
+
         if args.load_adapter:
-            llm_model.load_adapter(f"{args.dir}{os.sep}{adapter_name}", adapter_name)
+            llm_model.load_adapter(adapter_path, adapter_name)
         else:
             llm_model.init_adapter(mlora.lora_config_factory(lora_config))
 
