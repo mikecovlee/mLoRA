@@ -240,11 +240,23 @@ def _compute_loss(config_dict: Dict[str, TrainConfig], outputs: List[LLMModelOut
     return total_loss
 
 
-def _perform_evaluate(evaluate_configs: List[EvaluateConfig], **kwargs):
+def _perform_evaluate(
+    train_configs: Dict[str, TrainConfig],
+    evaluate_configs: List[EvaluateConfig],
+    **kwargs,
+):
     if len(evaluate_configs) > 0:
         with no_cache():
-            return evaluate(configs=evaluate_configs, **kwargs)
-    return []
+            results = evaluate(configs=evaluate_configs, **kwargs)
+    else:
+        results = []
+
+    for dic in results:
+        adapter_name = dic["adapter_name"]
+        config = train_configs[adapter_name]
+        dic["training_steps"] = config.training_steps_
+
+    return results
 
 
 def train(
@@ -313,6 +325,7 @@ def train(
 
         evaluate_results.extend(
             _perform_evaluate(
+                train_configs=config_dict,
                 evaluate_configs=evaluate_configs,
                 model=model,
                 tokenizer=tokenizer,
@@ -332,6 +345,7 @@ def train(
 
     evaluate_results.extend(
         _perform_evaluate(
+            train_configs=config_dict,
             evaluate_configs=evaluate_configs,
             model=model,
             tokenizer=tokenizer,
