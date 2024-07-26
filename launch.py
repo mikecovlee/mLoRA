@@ -188,7 +188,7 @@ def show_help():
         --data_path         path to input data
         --multi_task        multi-task training
         --append            append to existed config
-        --prompt_template
+        --prompt_template   [alpaca]
         --cutoff_len
         --save_step
         --warmup_steps
