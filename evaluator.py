@@ -15,12 +15,12 @@ def main(
     save_file: str = None,
     batch_size: int = 32,
     router_profile: bool = False,
-    device: str = mlora.get_backend().default_device_name(),
+    device: str = mlora.backend.default_device_name(),
 ):
 
     mlora.setup_logging("INFO")
 
-    if not mlora.get_backend().check_available():
+    if not mlora.backend.check_available():
         exit(-1)
 
     model = mlora.LLMModel.from_pretrained(
