@@ -7,6 +7,7 @@ import mlora
 def main(
     base_model: str,
     task_name: str,
+    data_path: str = None,
     lora_weights: str = None,
     load_16bit: bool = True,
     load_8bit: bool = False,
@@ -39,6 +40,7 @@ def main(
     evaluate_paramas = mlora.EvaluateConfig(
         adapter_name=adapter_name,
         task_name=task_name,
+        data_path=data_path,
         batch_size=batch_size,
         router_profile=router_profile,
     )

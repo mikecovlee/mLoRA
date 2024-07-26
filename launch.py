@@ -70,10 +70,10 @@ def gen_config(
     adapter_name: str = None,
     file_name: str = "mlora.json",
     data_path: str = None,
-    prompt_template: str = None,
     multi_task: bool = False,
     append: bool = False,
     # default value provided by template
+    prompt_template: str = None,
     cutoff_len: int = None,
     save_step: int = None,
     lr_scheduler: str = None,
@@ -185,8 +185,10 @@ def show_help():
         --tasks             task names separate by ';'
         --adapter_name      default is task name
         --file_name         default is 'mlora.json'
+        --data_path         path to input data
         --multi_task        multi-task training
         --append            append to existed config
+        --prompt_template
         --cutoff_len
         --save_step
         --warmup_steps

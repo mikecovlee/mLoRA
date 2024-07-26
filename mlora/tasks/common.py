@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import datasets as hf_datasets
@@ -22,11 +23,18 @@ class BasicMetric:
 class AutoMetric(BasicMetric):
     def __init__(self, task_name: str) -> None:
         super().__init__()
+        path_prefix = os.getenv("MLORA_METRIC_PATH")
+        if path_prefix is None:
+            path_prefix = ""
+
+        if not path_prefix.endswith(os.sep):
+            path_prefix += os.sep
+
         if ":" in task_name:
             split = task_name.split(":")
-            self.metric_ = hf_evaluate.load(split[0], split[1])
+            self.metric_ = hf_evaluate.load(path_prefix + split[0], split[1])
         else:
-            self.metric_ = hf_evaluate.load(task_name)
+            self.metric_ = hf_evaluate.load(path_prefix + task_name)
 
     def add_batch(self, predictions: torch.Tensor, references: torch.Tensor):
         self.metric_.add_batch(predictions=predictions, references=references)
