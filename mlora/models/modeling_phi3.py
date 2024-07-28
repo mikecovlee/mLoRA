@@ -49,6 +49,7 @@ class Phi3Config(LLMModelConfig):
     sliding_window_: int = 4096
     resid_pdrop: float = 0.0
     rms_norm_eps = 1e-5
+    intermediate_size=8192
 
 
 class Phi3RMSNorm(nn.Module):
@@ -98,10 +99,8 @@ class Phi3Attention(LLMAttention):
         self.original_max_embeddings = args.original_max_position_embeddings
         self.rope_theta_ = args.rope_theta
         self.head_dim_ = self.dim_ // self.n_heads_
-        # self.head_dim = args.head_dim_
         self.dtype_ = args.dtype_
         self.is_causal_ = True
-        # self.scaling_ =
         self.sliding_window_ = (
             args.sliding_window_
             if args.use_sliding_window_ and not bool(layer_idx % 2)
@@ -142,7 +141,7 @@ class Phi3Attention(LLMAttention):
         ).transpose(1, 2)
 
         # apply rotary embedding
-        cos, sin = rotary_emb  # (value_states, cache_position.unsqueeze(0))
+        cos, sin = rotary_emb
         assert query_states.dtype == key_states.dtype
         query_states, key_states = apply_rotary_pos_emb(
             query_states, key_states, cos, sin
@@ -180,7 +179,7 @@ class Phi3Attention(LLMAttention):
 
         print("Phi3 Attention passed.")
 
-        return self.o_proj_(attn_output, input_args)  # [8,139,3072]
+        return self.o_proj_(attn_output, input_args)
 
 
 class Phi3FlashAttention2(Phi3Attention):
@@ -322,10 +321,8 @@ class Phi3DecoderLayer(LLMDecoder):
         past_key_value: Optional[Cache] = None,
     ):
         residual = hidden_states
-        # print("[[modeling_phi3.py][phi3DecoderLayer.forward]].residual shape:\n", residual.shape)
         hidden_states = self.input_layernorm_(hidden_states)
         # Self Attention
-        # print("[[modeling_phi3.py][phi3DecoderLayer.forward]].hidden_states shape:\n",hidden_states.shape)
         hidden_states = self.self_attn_.forward(
             hidden_states,
             input_args,
@@ -357,8 +354,8 @@ class Phi3SequentialWrapper(nn.Module):
         module_name = self.name()
 
         if module_name == "Phi3Embedding":
-            output = self.wrapper_module_.forward(input[0])  # tokens
-            if input[-1].gradient_checkpoint_ != "none":  # orig.: if input[-1]:
+            output = self.wrapper_module_.forward(input[0]) 
+            if input[-1].gradient_checkpoint_ != "none": 
                 output = output.requires_grad_(True)
             print("Phi3 SW Embedding passed.")
             return (output,) + input[1:]
@@ -369,7 +366,7 @@ class Phi3SequentialWrapper(nn.Module):
         elif module_name == "Phi3DecoderLayer":
             outputs = CHECKPOINT_CLASSES[input[-1].gradient_checkpoint_](
                 self.wrapper_module_.forward,
-                *input,  # 这里的hidden_state已经是[8, 64, 3072]
+                *input,
             )
             if len(outputs) > 1:
                 self.router_probs_ = outputs[1:]
@@ -380,16 +377,21 @@ class Phi3SequentialWrapper(nn.Module):
 
 
 class Phi3MLP(LLMFeedForward):
-    def __init__(self, gate: nn.Module, down: nn.Module, args: LlamaConfig) -> None:
+    def __init__(self, gate: nn.Module, down: nn.Module, args: Phi3Config) -> None:
         super().__init__()
         # feed forward
+        self.half_rank_gate_up_ = Linear(
+            nn.Linear(args.dim_, args.intermediate_size, bias=False),
+            args.device_
+        )
         self.gate_up_ = Linear(gate, args.device_)
         self.down_ = Linear(down, args.device_)
         self.act_ = ACT2FN[args.hidden_act_]
 
     def state_dict(self) -> Dict[str, nn.Module]:
         return {
-            "gate_up_proj": self.gate_up_,
+            # "gate_up_proj": self.gate_up_,
+            "gate_up_proj": self.half_rank_gate_up_,
             "down_proj": self.down_,
         }
 
@@ -401,13 +403,12 @@ class Phi3MLP(LLMFeedForward):
         gate, up_states = up_states.chunk(2, dim=-1)
         up_states = up_states * self.act_(gate)
 
-        print("Phi3MLP passed.")
+        print("Phi3MLP._batch_forward() passed.")
         return self.down_(up_states, input_args)
 
     def _lora_forward(
         self, lora_name: str, act_fn: nn.Module, data: torch.Tensor
     ) -> torch.Tensor:
-        # raise NotImplementedError
         # Applying LoRA weights to FFN weights
         if lora_name in self.gate_up_.loras_:
             gate = self.gate_up_.loras_[lora_name].forward(
@@ -425,22 +426,22 @@ class Phi3MLP(LLMFeedForward):
 
         act_result = act_fn(gate) * up
         if lora_name in self.down_.loras_:
+            print("Phi3MLP._lora_forward(1) passed.")
             return self.down_.loras_[lora_name].forward(
                 self.down_.base_layer_.forward(act_result), act_result
             )
         else:
+            print("Phi3MLP._lora_forward(2) passed.")
             return self.down_.base_layer_.forward(act_result)
 
     def _mixlora_forward(
         self, moe_name, act_fn, expert_mask, hidden_states, input_dtype
     ):
 
-        # gate_up = self.gate_up_
-
-        common_gate = self.gate_up_.base_layer_.forward(
-            hidden_states.to(input_dtype)
-        ).to(hidden_states.dtype)
-        common_up = self.gate_up_.base_layer_.forward(hidden_states.to(input_dtype)).to(
+        common_gate = self.half_rank_gate_up_.base_layer_.forward(hidden_states.to(dtype=torch.float)).to(
+            hidden_states.dtype
+            )
+        common_up = self.half_rank_gate_up_.base_layer_.forward(hidden_states.to(dtype=torch.float)).to(
             hidden_states.dtype
         )
         final_expert_states = []
@@ -448,17 +449,17 @@ class Phi3MLP(LLMFeedForward):
             _, top_x = torch.where(expert_mask[expert_idx])
 
             lora_name = f"moe.{moe_name}.experts.{expert_idx}"
-            if lora_name in self.gate_up_.loras_:
+            if lora_name in self.half_rank_gate_up_.loras_:
                 lora_data = _mixtral_slice_tensor(hidden_states, top_x, input_dtype)
-                gate = self.gate_up_.loras_[lora_name].forward(
+                gate = self.half_rank_gate_up_.loras_[lora_name].forward(
                     _mixtral_slice_tensor(common_gate, top_x, input_dtype), lora_data
                 )
             else:
                 lora_data = None
                 gate = _mixtral_slice_tensor(common_gate, top_x, input_dtype)
 
-            if lora_name in self.gate_up_.loras_:
-                up = self.gate_up_.loras_[lora_name].forward(
+            if lora_name in self.half_rank_gate_up_.loras_:
+                up = self.half_rank_gate_up_.loras_[lora_name].forward(
                     _mixtral_slice_tensor(common_up, top_x, input_dtype),
                     _mixtral_slice_tensor(hidden_states, top_x, input_dtype, lora_data),
                 )
@@ -475,7 +476,7 @@ class Phi3MLP(LLMFeedForward):
                 )
             else:
                 final_expert_states.append(self.down_.base_layer_.forward(act_result))
-
+        print("Phi3MLP._mixlora_forward() passed.")
         return final_expert_states
 
 

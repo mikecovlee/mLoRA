@@ -1,21 +1,60 @@
-ModuleList(
-  (0-41): 42 x Gemma2DecoderLayer(
-    (self_attn): Gemma2SdpaAttention(
-      (q_proj): Linear(in_features=3584, out_features=4096, bias=False)
-      (k_proj): Linear(in_features=3584, out_features=2048, bias=False)
-      (v_proj): Linear(in_features=3584, out_features=2048, bias=False)
-      (o_proj): Linear(in_features=4096, out_features=3584, bias=False)
-      (rotary_emb): Gemma2RotaryEmbedding()
+gemma2-9b constructure:    
+    ModuleList(
+    (0-41): 42 x Gemma2DecoderLayer(
+        (self_attn): Gemma2SdpaAttention(
+        (q_proj): Linear(in_features=3584, out_features=4096, bias=False)
+        (k_proj): Linear(in_features=3584, out_features=2048, bias=False)
+        (v_proj): Linear(in_features=3584, out_features=2048, bias=False)
+        (o_proj): Linear(in_features=4096, out_features=3584, bias=False)
+        (rotary_emb): Gemma2RotaryEmbedding()
+        )
+        (mlp): Gemma2MLP(
+        (gate_proj): Linear(in_features=3584, out_features=14336, bias=False)
+        (up_proj): Linear(in_features=3584, out_features=14336, bias=False)
+        (down_proj): Linear(in_features=14336, out_features=3584, bias=False)
+        (act_fn): PytorchGELUTanh()
+        )
+        (input_layernorm): Gemma2RMSNorm()
+        (post_attention_layernorm): Gemma2RMSNorm()
+        (pre_feedforward_layernorm): Gemma2RMSNorm()
+        (post_feedforward_layernorm): Gemma2RMSNorm()
     )
-    (mlp): Gemma2MLP(
-      (gate_proj): Linear(in_features=3584, out_features=14336, bias=False)
-      (up_proj): Linear(in_features=3584, out_features=14336, bias=False)
-      (down_proj): Linear(in_features=14336, out_features=3584, bias=False)
-      (act_fn): PytorchGELUTanh()
     )
-    (input_layernorm): Gemma2RMSNorm()
-    (post_attention_layernorm): Gemma2RMSNorm()
-    (pre_feedforward_layernorm): Gemma2RMSNorm()
-    (post_feedforward_layernorm): Gemma2RMSNorm()
-  )
-)
+
+Phi3-mini-128k-instruct constructure:
+    ModuleList(
+    (0-31): 32 x Phi3DecoderLayer(
+        (self_attn): Phi3Attention(
+        (o_proj): Linear(in_features=3072, out_features=3072, bias=False)
+        (qkv_proj): Linear(in_features=3072, out_features=9216, bias=False)
+        (rotary_emb): Phi3SuScaledRotaryEmbedding()
+        )
+        (mlp): Phi3MLP(
+        (gate_up_proj): Linear(in_features=3072, out_features=16384, bias=False) 
+        (down_proj): Linear(in_features=8192, out_features=3072, bias=False)
+        (activation_fn): SiLU()
+        )
+        (input_layernorm): Phi3RMSNorm()
+        (resid_attn_dropout): Dropout(p=0.0, inplace=False)
+        (resid_mlp_dropout): Dropout(p=0.0, inplace=False)
+        (post_attention_layernorm): Phi3RMSNorm()
+    )
+    )
+
+Phi2 constructure:
+    PhiDecoderLayer(
+    (self_attn): PhiAttention(
+        (q_proj): Linear(in_features=2560, out_features=2560, bias=True)
+        (k_proj): Linear(in_features=2560, out_features=2560, bias=True)
+        (v_proj): Linear(in_features=2560, out_features=2560, bias=True)
+        (dense): Linear(in_features=2560, out_features=2560, bias=True)
+        (rotary_emb): PhiRotaryEmbedding()
+    )
+    (mlp): PhiMLP(
+        (activation_fn): NewGELUActivation()
+        (fc1): Linear(in_features=2560, out_features=10240, bias=True)
+        (fc2): Linear(in_features=10240, out_features=2560, bias=True)
+    )
+    (input_layernorm): LayerNorm((2560,), eps=1e-05, elementwise_affine=True)
+    (resid_dropout): Dropout(p=0.1, inplace=False)
+    )
