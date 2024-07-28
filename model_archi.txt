@@ -1,0 +1,21 @@
+ModuleList(
+  (0-41): 42 x Gemma2DecoderLayer(
+    (self_attn): Gemma2SdpaAttention(
+      (q_proj): Linear(in_features=3584, out_features=4096, bias=False)
+      (k_proj): Linear(in_features=3584, out_features=2048, bias=False)
+      (v_proj): Linear(in_features=3584, out_features=2048, bias=False)
+      (o_proj): Linear(in_features=4096, out_features=3584, bias=False)
+      (rotary_emb): Gemma2RotaryEmbedding()
+    )
+    (mlp): Gemma2MLP(
+      (gate_proj): Linear(in_features=3584, out_features=14336, bias=False)
+      (up_proj): Linear(in_features=3584, out_features=14336, bias=False)
+      (down_proj): Linear(in_features=14336, out_features=3584, bias=False)
+      (act_fn): PytorchGELUTanh()
+    )
+    (input_layernorm): Gemma2RMSNorm()
+    (post_attention_layernorm): Gemma2RMSNorm()
+    (pre_feedforward_layernorm): Gemma2RMSNorm()
+    (post_feedforward_layernorm): Gemma2RMSNorm()
+  )
+)

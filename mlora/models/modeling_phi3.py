@@ -215,7 +215,7 @@ class Phi3FlashAttention2(Phi3Attention):
             args: Phi3Config,) -> None:
         assert is_flash_attn_2_available(), "Flash Attention is not available"
         super().__init__(qkv_proj, o_proj,layer_idx, args)
-        # self._flash_attn_uses_top_left_mask = not is_flash_attn_greater_or_equal_2_10()
+        self._flash_attn_uses_top_left_mask = not is_flash_attn_greater_or_equal_2_10()
 
     def forward(
         self,
@@ -281,132 +281,14 @@ class Phi3FlashAttention2(Phi3Attention):
             attention_mask,
             q_len,
             is_causal=self.is_causal_,
+            sliding_window=getattr(self.args_, "sliding_window", None),
+            use_top_left_mask=self._flash_attn_uses_top_left_mask,
         ).to(input_dtype)
-
-        """ softmax_scale=self.scaling_,
-            sliding_window=(
-                self.sliding_window_ if self.config_.use_sliding_window_ else None
-            ),
-            softcap=(
-                self.config_.attn_logit_softcapping_
-                if is_package_available("flash_attn", "2.6.0")
-                else None
-            ), """
 
         attn_output = attn_output.reshape(bsz, q_len, -1).contiguous()
         attn_output = self.o_proj_(attn_output, input_args)
 
-        return attn_output
-
-    # Copied from transformers.models.mistral.modeling_mistral.MistralFlashAttention2._flash_attention_forward
-    def _flash_attention_forward(
-        self,
-        query_states,
-        key_states,
-        value_states,
-        attention_mask,
-        query_length,
-        dropout=0.0,
-        softmax_scale=None,
-        # use_sliding_windows=False,
-    ):
-        """
-        Calls the forward method of Flash Attention - if the input hidden states contain at least one padding token
-        first unpad the input, then computes the attention scores and pad the final attention scores.
-        Args:
-            query_states (`torch.Tensor`):
-                Input query states to be passed to Flash Attention API
-            key_states (`torch.Tensor`):
-                Input key states to be passed to Flash Attention API
-            value_states (`torch.Tensor`):
-                Input value states to be passed to Flash Attention API
-            attention_mask (`torch.Tensor`):
-                The padding mask - corresponds to a tensor of size `(batch_size, seq_len)` where 0 stands for the
-                position of padding tokens and 1 for the position of non-padding tokens.
-            dropout (`float`):
-                Attention dropout
-            softmax_scale (`float`, *optional*):
-                The scaling of QK^T before applying softmax. Default to 1 / sqrt(head_dim)
-            use_sliding_windows (`bool`, *optional*):
-                Whether to activate sliding window attention.
-        """
-        use_sliding_windows = False  # 支持后删除
-
-        if not self._flash_attn_uses_top_left_mask:
-            causal = self.is_causal_
-        else:
-            causal = self.is_causal_ and query_length != 1
-
-        # Contains at least one padding token in the sequence
-        if attention_mask is not None:
-            batch_size = query_states.shape[0]
-            (
-                query_states,
-                key_states,
-                value_states,
-                indices_q,
-                cu_seq_lens,
-                max_seq_lens,
-            ) = self._upad_input(
-                query_states, key_states, value_states, attention_mask, query_length
-            )
-            
-
-            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
-            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
-
-            if not use_sliding_windows:
-                attn_output_unpad = flash_attn_varlen_func(
-                    query_states,
-                    key_states,
-                    value_states,
-                    cu_seqlens_q=cu_seqlens_q,
-                    cu_seqlens_k=cu_seqlens_k,
-                    max_seqlen_q=max_seqlen_in_batch_q,
-                    max_seqlen_k=max_seqlen_in_batch_k,
-                    dropout_p=dropout,
-                    softmax_scale=softmax_scale,
-                    causal=causal,
-                )
-            else:
-                attn_output_unpad = flash_attn_varlen_func(
-                    query_states,
-                    key_states,
-                    value_states,
-                    cu_seqlens_q=cu_seqlens_q,
-                    cu_seqlens_k=cu_seqlens_k,
-                    max_seqlen_q=max_seqlen_in_batch_q,
-                    max_seqlen_k=max_seqlen_in_batch_k,
-                    dropout_p=dropout,
-                    softmax_scale=softmax_scale,
-                    causal=causal,
-                    # window_size=(self.config.sliding_window, self.config.sliding_window),
-                )
-
-            attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
-        else:
-            if not use_sliding_windows:
-                attn_output = flash_attn_func(
-                    query_states,
-                    key_states,
-                    value_states,
-                    dropout,
-                    softmax_scale=softmax_scale,
-                    causal=causal,
-                )
-            else:
-                attn_output = flash_attn_func(
-                    query_states,
-                    key_states,
-                    value_states,
-                    dropout,
-                    softmax_scale=softmax_scale,
-                    causal=causal,
-                    # window_size=(self.config.sliding_window, self.config.sliding_window),
-                )
-
-        return attn_output
-   
+        return attn_output  
 
 PHI3_ATTENTION_CLASSES = {
     "eager": Phi3Attention,
