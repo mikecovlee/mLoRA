@@ -194,7 +194,7 @@ class MixtralSparseMoe(torch.nn.Module):
 
         routing_weights /= routing_weights.sum(
             dim=-1, keepdim=True
-        )  # Top-k 时，分给不同专家的权重
+        )
 
         final_hidden_states = torch.zeros(
             (batch_size * sequence_length, hidden_dim),
