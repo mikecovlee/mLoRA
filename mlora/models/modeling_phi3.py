@@ -32,14 +32,10 @@ from mlora.common import (
 )
 from mlora.common.mix_lora import _mixtral_slice_tensor
 from mlora.models.modeling_llama import (
-    LLAMA_ATTENTION_CLASSES as PHI3_ATTENTION_CLASSES,
-)
-from mlora.models.modeling_llama import (
     LlamaConfig,
 )
 from mlora.utils import copy_parameters
 from .modeling_gemma2 import Gemma2RotaryEmbedding
-
 
 @dataclass
 class Phi3Config(LLMModelConfig):
@@ -282,6 +278,12 @@ class Phi3FlashAttention2(Phi3Attention):
         attn_output = self.o_proj_(attn_output, input_args)
 
         return attn_output
+
+
+PHI3_ATTENTION_CLASSES = {
+    "eager": Phi3Attention,
+    "flash_attn": Phi3FlashAttention2,
+}
 
 
 class Phi3DecoderLayer(LLMDecoder):
