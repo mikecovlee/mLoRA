@@ -24,11 +24,11 @@ jobs:
         python -m pip install --upgrade pip
         pip3 install -e .
         pip3 install black isort flake8 pytest
-    - name: Lint with flake8
+    - name: Code lint
       run: |
         black mlora
         isort mlora --profile black
         flake8 mlora --show-source --statistics --max-line-length=128 --max-complexity 15 --ignore=E203,W503,E722
-    - name: Test with pytest
+    - name: Run tests
       run: |
         pytest
