@@ -7,8 +7,8 @@ sentencepiece
 huggingface_hub
 scikit-learn
 tiktoken
-gradio==4.29.0
-peft==0.11.1
+gradio
+peft
 pandas
 fire
 black
