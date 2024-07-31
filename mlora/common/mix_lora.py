@@ -4,8 +4,8 @@ import torch
 import torch.nn.functional as F
 from transformers.activations import ACT2FN
 
-from .config import LLMModelConfig, MixConfig
-from .model import LLMFeedForward
+from .config import LLMModelConfig, MixLoraConfig
+from .model import LLMFeedForward, LLMSparseMoe
 
 
 def _slice_tensor(
@@ -84,7 +84,7 @@ def _mixtral_load_balancing_loss_func(
 
 
 class MixtralRouterLoss(torch.nn.Module):
-    def __init__(self, config: MixConfig) -> None:
+    def __init__(self, config: MixLoraConfig) -> None:
         super().__init__()
         self.aux_loss_coef = config.router_aux_loss_coef_
         self.experts = config.num_experts_
@@ -109,8 +109,8 @@ def _mixtral_compatible_forward(
     return final_expert_states
 
 
-class MixtralSparseMoe(torch.nn.Module):
-    def __init__(self, llm_config: LLMModelConfig, config: MixConfig) -> None:
+class MixtralSparseMoe(LLMSparseMoe):
+    def __init__(self, llm_config: LLMModelConfig, config: MixLoraConfig) -> None:
         super().__init__()
 
         self.adapter_name_: str = config.adapter_name
@@ -284,7 +284,7 @@ def _switch_unpack_router_logits(router_outputs):
 
 
 class SwitchRouterLoss(torch.nn.Module):
-    def __init__(self, config: MixConfig) -> None:
+    def __init__(self, config: MixLoraConfig) -> None:
         super().__init__()
         self.experts = config.num_experts_
         self.expert_capacity_ = config.expert_capacity_
@@ -303,8 +303,8 @@ class SwitchRouterLoss(torch.nn.Module):
         return self.z_loss_coef * z_loss + self.aux_loss_coef * aux_loss
 
 
-class SwitchSparseMoe(torch.nn.Module):
-    def __init__(self, llm_config: LLMModelConfig, config: MixConfig) -> None:
+class SwitchSparseMoe(LLMSparseMoe):
+    def __init__(self, llm_config: LLMModelConfig, config: MixLoraConfig) -> None:
         super().__init__()
 
         self.adapter_name_: str = config.adapter_name

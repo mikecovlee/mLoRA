@@ -200,7 +200,7 @@ available_routing_strategies = ["mixtral", "switch"]
 
 
 @dataclass
-class MixConfig(LoraConfig):
+class MixLoraConfig(LoraConfig):
     # expert lora
     expert_config_: LoraConfig = None
     # router config
@@ -219,7 +219,7 @@ class MixConfig(LoraConfig):
     ffn_dropout_: float = None
     sparse_step_: int = None
 
-    def check(self) -> "MixConfig":
+    def check(self) -> "MixLoraConfig":
         super().check()
         if self.expert_config_ is not None:
             self.expert_config_.check()
@@ -255,8 +255,8 @@ class MixConfig(LoraConfig):
         return self
 
     @staticmethod
-    def from_config(config: Dict[str, any]) -> "MixConfig":
-        lora_config = MixConfig(**LoraConfig.from_config(config).__dict__)
+    def from_config(config: Dict[str, any]) -> "MixLoraConfig":
+        lora_config = MixLoraConfig(**LoraConfig.from_config(config).__dict__)
         if "expert_lora" in config:
             expert_config = copy.deepcopy(config)
             expert_config.update(config["expert_lora"])
@@ -317,10 +317,43 @@ class MixConfig(LoraConfig):
         return config
 
 
+@dataclass
+class LoraMoeConfig(LoraConfig):
+    blc_alpha_: float = None
+    blc_weight_: float = None
+    num_experts_: int = None
+
+    def check(self) -> "LoraMoeConfig":
+        super().check()
+        assert isinstance(self.blc_alpha_, float) and self.blc_alpha_ >= 0.0
+        assert isinstance(self.blc_weight_, float) and self.blc_weight_ >= 0.0
+        assert isinstance(self.num_experts_, int) and self.num_experts_ > 0
+
+    @staticmethod
+    def from_config(config: Dict[str, any]) -> "LoraMoeConfig":
+        return LoraMoeConfig(
+            blc_alpha_=config.get("blc_alpha", 0.0),
+            blc_weight_=config.get("blc_weight", 0.0),
+            num_experts_=config["num_experts"],
+            **LoraConfig.from_config(config).__dict__,
+        )
+
+    def export(self) -> Dict[str, any]:
+        config = super().export()
+        config["peft_type"] = "LORAMOE"
+        config["blc_alpha"] = self.blc_alpha_
+        config["blc_weight"] = self.blc_weight_
+        config["num_experts"] = self.num_experts_
+
+        return config
+
+
 def lora_config_factory(config: Dict[str, any]) -> LoraConfig:
     if (
         "peft_type" in config and config["peft_type"] == "MIXLORA"
     ) or "routing_strategy" in config:
-        return MixConfig.from_config(config).check()
+        return MixLoraConfig.from_config(config).check()
+    if "peft_type" in config and config["peft_type"] == "LORAMOE":
+        return LoraMoeConfig.from_config(config).check()
     else:
         return LoraConfig.from_config(config).check()

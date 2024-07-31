@@ -20,7 +20,8 @@ from mlora.common import (
     LLMModelOutput,
     LLMOutput,
     LoraConfig,
-    MixConfig,
+    LoraMoeConfig,
+    MixLoraConfig,
     lora_config_factory,
     router_loss_factory,
 )
@@ -166,7 +167,8 @@ def init_lora_layer_weight(
         linear_layer_list.append(module)
         linear_layer_name_list.append(name)
 
-    if isinstance(config, MixConfig):
+    if isinstance(config, MixLoraConfig):
+        model_prefix_name = "mixlora"
         if config.sparse_step_ is None or layer.layer_id_ % config.sparse_step_ == 1:
             # Inject LoRA configs into FFN layer
             gate_layer_name = f"mixlora.layers.{layer.layer_id_}.gate.weight"
@@ -180,7 +182,12 @@ def init_lora_layer_weight(
             moe_layer_name_list = []
 
         init_moe = True
+    elif isinstance(config, LoraMoeConfig):
+        model_prefix_name = "loramoe"
+        moe_layer_name_list = list(layer.mlp_.state_dict().keys())
+        init_moe = True
     else:
+        model_prefix_name = "base_model.model.model"
         moe_layer_name_list = []
         init_moe = False
 
@@ -191,8 +198,14 @@ def init_lora_layer_weight(
                     lora_a = None
                     lora_b = None
                     if weight is not None:
-                        lora_a_name = f"mixlora.layers.{layer.layer_id_}.experts.{expert_idx}.{layer_name}.lora_A.weight"
-                        lora_b_name = f"mixlora.layers.{layer.layer_id_}.experts.{expert_idx}.{layer_name}.lora_B.weight"
+                        lora_a_name = (
+                            f"{model_prefix_name}.layers.{layer.layer_id_}"
+                            + f".experts.{expert_idx}.{layer_name}.lora_A.weight"
+                        )
+                        lora_b_name = (
+                            f"{model_prefix_name}.layers.{layer.layer_id_}"
+                            + f".experts.{expert_idx}.{layer_name}.lora_B.weight"
+                        )
                         if lora_a_name not in weight:
                             raise f"can not found the layer {lora_a_name} in model"
                         if lora_b_name not in weight:
@@ -207,11 +220,7 @@ def init_lora_layer_weight(
                 lora_a = None
                 lora_b = None
                 if weight is not None:
-                    name_prefix = (
-                        "mixlora.layers"
-                        if init_moe
-                        else "base_model.model.model.layers"
-                    )
+                    name_prefix = f"{model_prefix_name}.layers"
                     lora_a_name = f"{name_prefix}.{layer.layer_id_}.self_attn.{layer_name}.lora_A.weight"
                     lora_b_name = f"{name_prefix}.{layer.layer_id_}.self_attn.{layer_name}.lora_B.weight"
 
@@ -477,7 +486,7 @@ class LLMModel(torch.nn.Module):
         self, config: AdapterConfig, weight: Optional[Dict[str, torch.Tensor]] = None
     ):
         # Patch for MixLoRA
-        if isinstance(config, MixConfig) and config.act_fn_ is None:
+        if isinstance(config, MixLoraConfig) and config.act_fn_ is None:
             config.act_fn_ = self.config_.hidden_act_
 
         self.adapter_configs_[config.adapter_name] = config
@@ -511,8 +520,12 @@ class LLMModel(torch.nn.Module):
         # return the lora weight and target_module's name
         lora_weight_dict = self.output_.layers_[adapter_name].state_dict()
         for idx, transformer_layer in enumerate(self.model_.layers_):
-            if isinstance(self.adapter_configs_[adapter_name], MixConfig):
+            if isinstance(self.adapter_configs_[adapter_name], MixLoraConfig):
                 layer_prefix_name = f"mixlora.layers.{idx}.self_attn."
+                moe_layer_prefix_name = f"mixlora.layers.{transformer_layer.layer_id_}."
+            elif isinstance(self.adapter_configs_[adapter_name], LoraMoeConfig):
+                layer_prefix_name = f"loramoe.layers.{idx}.self_attn."
+                moe_layer_prefix_name = f"loramoe.layers.{transformer_layer.layer_id_}."
             else:
                 layer_prefix_name = f"base_model.model.model.layers.{idx}.self_attn."
 
@@ -532,9 +545,6 @@ class LLMModel(torch.nn.Module):
                         lora_layer.loras_[adapter_name].lora_b_.weight
                     )
                 elif adapter_name in transformer_layer.mlp_.moes_:
-                    moe_layer_prefix_name = (
-                        f"mixlora.layers.{transformer_layer.layer_id_}."
-                    )
                     for expert_idx in range(
                         transformer_layer.mlp_.moes_[adapter_name].experts_
                     ):

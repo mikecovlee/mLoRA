@@ -8,7 +8,7 @@ from .common import (
     LLMModelInput,
     LLMModelOutput,
     LoraConfig,
-    MixConfig,
+    MixLoraConfig,
     cache_factory,
     lora_config_factory,
 )
@@ -38,7 +38,7 @@ __all__ = [
     "LLMModelInput",
     "AdapterConfig",
     "LoraConfig",
-    "MixConfig",
+    "MixLoraConfig",
     "lora_config_factory",
     "TrainTask",
     "Dispatcher",

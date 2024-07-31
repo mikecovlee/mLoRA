@@ -97,6 +97,21 @@ class LLMFeedForward(metaclass=ABCMeta):
         pass
 
 
+class LLMSparseMoe(metaclass=ABCMeta):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.adapter_name_: str = None
+        self.dtype_: torch.dtype = None
+        self.gate_: torch.nn.Linear = None
+        self.experts_: int = None
+        self.router_profile_: bool = False
+        self.profiler_: List[int] = None
+
+    def forward(self, mlp: LLMFeedForward, hidden_states: torch.Tensor) -> Tuple:
+        pass
+
+
 class LLMDecoder(metaclass=ABCMeta):
     @classmethod
     def state_dict(self) -> Dict[str, torch.nn.Module]:
