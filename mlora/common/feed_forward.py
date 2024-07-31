@@ -4,10 +4,10 @@ import torch
 
 from mlora.backends import backend
 
+from .config import LLMModelConfig, LLMModelInput, MixConfig
 from .lora_linear import Linear, get_range_tensor
-from .mix_lora import moe_layer_factory
+from .lora_moes import moe_layer_factory
 from .model import LLMFeedForward
-from .modelargs import LLMModelConfig, LLMModelInput, MixConfig
 
 
 class FeedForward(torch.nn.Module):

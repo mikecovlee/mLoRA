@@ -7,7 +7,7 @@ from transformers.utils import is_bitsandbytes_available
 
 from mlora.backends import backend
 
-from .modelargs import LLMModelInput, LoraConfig
+from .config import LLMModelInput, LoraConfig
 
 if is_bitsandbytes_available():
     import bitsandbytes as bnb

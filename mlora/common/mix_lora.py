@@ -4,8 +4,22 @@ import torch
 import torch.nn.functional as F
 from transformers.activations import ACT2FN
 
+from .config import LLMModelConfig, MixConfig
 from .model import LLMFeedForward
-from .modelargs import LLMModelConfig, MixConfig
+
+
+def _slice_tensor(
+    data: torch.Tensor,
+    slice: torch.Tensor,
+    dtype: torch.dtype,
+    last_value: Optional[torch.Tensor] = None,
+):
+    if last_value is None:
+        # for macOS debugging, please uncomment this line
+        # assert data.dtype in (torch.float, torch.int, torch.bool)
+        return data[None, slice].reshape(-1, data.shape[-1]).to(dtype)
+    else:
+        return last_value
 
 
 def _mixtral_load_balancing_loss_func(
@@ -14,26 +28,6 @@ def _mixtral_load_balancing_loss_func(
     top_k: int,
     attention_mask: Optional[torch.Tensor] = None,
 ) -> float:
-    r"""
-    Computes auxiliary load balancing loss as in Switch Transformer - implemented in Pytorch.
-
-    See Switch Transformer (https://arxiv.org/abs/2101.03961) for more details. This function implements the loss
-    function presented in equations (4) - (6) of the paper. It aims at penalizing cases where the routing between
-    experts is too unbalanced.
-
-    Args:
-        gate_logits (Union[`torch.Tensor`, Tuple[torch.Tensor]):
-            Logits from the `gate`, should be a tuple of model.config.num_hidden_layers tensors of
-            shape [batch_size X sequence_length, num_experts].
-        attention_mask (`torch.Tensor`, None):
-            The attention_mask used in forward function
-            shape [batch_size X sequence_length] if not None.
-        num_experts (`int`, *optional*):
-            Number of experts
-
-    Returns:
-        The auxiliary loss.
-    """
     compute_device = gate_logits[0].device
     concatenated_gate_logits = torch.cat(
         [layer_gate.to(compute_device) for layer_gate in gate_logits], dim=0
@@ -102,20 +96,6 @@ class MixtralRouterLoss(torch.nn.Module):
         )
 
 
-def _mixtral_slice_tensor(
-    data: torch.Tensor,
-    slice: torch.Tensor,
-    dtype: torch.dtype,
-    last_value: Optional[torch.Tensor] = None,
-):
-    if last_value is None:
-        # for macOS debugging, please uncomment this line
-        # assert data.dtype in (torch.float, torch.int, torch.bool)
-        return data[None, slice].reshape(-1, data.shape[-1]).to(dtype)
-    else:
-        return last_value
-
-
 def _mixtral_compatible_forward(
     mlp: LLMFeedForward, moe_name: str, act_fn, expert_mask, hidden_states, input_dtype
 ):
@@ -123,7 +103,7 @@ def _mixtral_compatible_forward(
     for expert_idx in range(expert_mask.shape[0]):
         _, top_x = torch.where(expert_mask[expert_idx])
         lora_name = f"moe.{moe_name}.experts.{expert_idx}"
-        lora_data = _mixtral_slice_tensor(hidden_states, top_x, input_dtype)
+        lora_data = _slice_tensor(hidden_states, top_x, input_dtype)
         final_expert_states.append(mlp._lora_forward(lora_name, act_fn, lora_data))
 
     return final_expert_states
@@ -418,24 +398,3 @@ class SwitchSparseMoe(torch.nn.Module):
         hidden_states = self.dropout_(router_probs * next_states).to(input_dtype)
 
         return hidden_states, router_logits
-
-
-router_loss_dict = {"mixtral": MixtralRouterLoss, "switch": SwitchRouterLoss}
-
-
-def router_loss_factory(config: MixConfig) -> torch.nn.Module:
-    if config.routing_strategy_ not in router_loss_dict:
-        raise ValueError(f"Unknown routing strategy {config.routing_strategy_}")
-    if config.router_loss_:
-        return router_loss_dict[config.routing_strategy_](config)
-    else:
-        return None
-
-
-moe_layer_dict = {"mixtral": MixtralSparseMoe, "switch": SwitchSparseMoe}
-
-
-def moe_layer_factory(args: LLMModelConfig, config: MixConfig) -> torch.nn.Module:
-    if config.routing_strategy_ not in router_loss_dict:
-        raise ValueError(f"Unknown routing strategy {config.routing_strategy_}")
-    return moe_layer_dict[config.routing_strategy_](args, config)

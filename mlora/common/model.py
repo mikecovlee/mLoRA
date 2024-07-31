@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
-from .modelargs import LLMModelConfig, LLMModelInput
+from .config import LLMModelConfig, LLMModelInput
 
 
 @dataclass

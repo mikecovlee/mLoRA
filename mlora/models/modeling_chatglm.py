@@ -21,7 +21,7 @@ from mlora.common import (
     LLMModelInput,
     flash_attention_forward,
 )
-from mlora.common.mix_lora import _mixtral_slice_tensor
+from mlora.common.mix_lora import _slice_tensor
 from mlora.utils import copy_parameters
 
 
@@ -522,16 +522,16 @@ class GLMMLP(LLMFeedForward):
 
             lora_name = f"moe.{moe_name}.experts.{expert_idx}"
             if lora_name in self.dense_h_to_4h.loras_:
-                lora_data = _mixtral_slice_tensor(hidden_states, top_x, input_dtype)
+                lora_data = _slice_tensor(hidden_states, top_x, input_dtype)
                 act_result = self.activation_func(
                     self.dense_h_to_4h.loras_[lora_name].forward(
-                        _mixtral_slice_tensor(common_dense_h_to_4h, top_x, input_dtype),
+                        _slice_tensor(common_dense_h_to_4h, top_x, input_dtype),
                         lora_data,
                     )
                 )
             else:
                 act_result = self.activation_func(
-                    _mixtral_slice_tensor(common_dense_h_to_4h, top_x, input_dtype)
+                    _slice_tensor(common_dense_h_to_4h, top_x, input_dtype)
                 )
 
             if lora_name in self.dense_4h_to_h.loras_:

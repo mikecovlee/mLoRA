@@ -23,7 +23,7 @@ from mlora.common import (
     flash_attention_forward,
     prepare_4d_causal_attention_mask,
 )
-from mlora.common.mix_lora import _mixtral_slice_tensor
+from mlora.common.mix_lora import _slice_tensor
 from mlora.utils import copy_parameters
 
 from .modeling_gemma2 import Gemma2RotaryEmbedding as Phi3RotaryEmbedding
@@ -306,13 +306,11 @@ class Phi3MLP(LLMFeedForward):
             lora_name = f"moe.{moe_name}.experts.{expert_idx}"
             if lora_name in self.gate_up_proj_.loras_:
                 gate_up_states = self.gate_up_proj_.loras_[lora_name].forward(
-                    _mixtral_slice_tensor(common_gate_up, top_x, input_dtype),
-                    _mixtral_slice_tensor(hidden_states, top_x, input_dtype),
+                    _slice_tensor(common_gate_up, top_x, input_dtype),
+                    _slice_tensor(hidden_states, top_x, input_dtype),
                 )
             else:
-                gate_up_states = _mixtral_slice_tensor(
-                    common_gate_up, top_x, input_dtype
-                )
+                gate_up_states = _slice_tensor(common_gate_up, top_x, input_dtype)
 
             gate_states, up_states = gate_up_states.chunk(2, dim=-1)
             act_result = up_states * act_fn(gate_states)
