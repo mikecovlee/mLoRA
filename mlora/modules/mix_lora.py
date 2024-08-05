@@ -1,11 +1,11 @@
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 from transformers.activations import ACT2FN
 
+from .abstracts import LLMFeedForward, LLMSparseMoe
 from .config import LLMModelConfig, MixLoraConfig
-from .model import LLMFeedForward, LLMSparseMoe
 
 
 def _slice_tensor(
@@ -128,6 +128,9 @@ class MixtralSparseMoe(LLMSparseMoe):
         self.jitter_noise_: float = config.jitter_noise_
         self.router_profile_: bool = False
         self.profiler_: List[int] = None
+
+    def state_dict(self) -> Dict[str, torch.nn.Module]:
+        return {"gate": self.gate_.weight}
 
     def _profiling(
         self, batch_size: int, sequence_length: int, selected_experts: torch.Tensor

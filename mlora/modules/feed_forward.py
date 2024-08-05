@@ -4,10 +4,10 @@ import torch
 
 from mlora.backends import backend
 
+from .abstracts import LLMFeedForward
 from .config import LLMModelConfig, LLMModelInput, MixLoraConfig
 from .lora_linear import Linear, get_range_tensor
 from .lora_moes import moe_layer_factory
-from .model import LLMFeedForward
 
 
 class FeedForward(torch.nn.Module):
@@ -26,9 +26,8 @@ class FeedForward(torch.nn.Module):
         if len(self.moes_) == 0:
             return self.mlp_._batch_forward(data, input_args), []
         else:
-            return self._mixlora_forward(data, input_args)
+            return self._moe_forward(data, input_args)
 
-    # MixLoRA
     def init_moe_weight(
         self,
         args: LLMModelConfig,
@@ -46,7 +45,7 @@ class FeedForward(torch.nn.Module):
             with torch.no_grad():
                 self.moes_[config.adapter_name].gate_.weight.copy_(gate)
 
-    def _mixlora_forward(self, data: torch.Tensor, input_args: LLMModelInput):
+    def _moe_forward(self, data: torch.Tensor, input_args: LLMModelInput):
         final_hidden_states = backend.init_tensor(data)
 
         if input_args.output_router_logits_:

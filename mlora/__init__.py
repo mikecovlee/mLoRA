@@ -1,8 +1,12 @@
 from .backends import backend
-from .common import (
+from .dispatcher import Dispatcher, TrainTask
+from .evaluator import EvaluateConfig, evaluate
+from .generator import GenerateConfig, generate
+from .model import LLMModel
+from .modules import (
     AdapterConfig,
-    Cache,
     LLMBatchConfig,
+    LLMCache,
     LLMForCausalLM,
     LLMModelConfig,
     LLMModelInput,
@@ -12,10 +16,6 @@ from .common import (
     cache_factory,
     lora_config_factory,
 )
-from .dispatcher import Dispatcher, TrainTask
-from .evaluator import EvaluateConfig, evaluate
-from .generator import GenerateConfig, generate
-from .model import LLMModel
 from .prompter import Prompter
 from .tokenizer import Tokenizer
 from .trainer import TrainConfig, train
@@ -29,7 +29,7 @@ assert is_package_available(
 setup_logging()
 
 __all__ = [
-    "Cache",
+    "LLMCache",
     "cache_factory",
     "LLMModelConfig",
     "LLMModelOutput",

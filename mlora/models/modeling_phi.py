@@ -14,11 +14,11 @@ from transformers.models.phi.modeling_phi import (
 from transformers.utils import is_flash_attn_2_available
 
 from mlora.backends import backend
-from mlora.common import (
-    Cache,
+from mlora.modules import (
     FeedForward,
     Linear,
     LLMAttention,
+    LLMCache,
     LLMDecoder,
     LLMFeedForward,
     LLMForCausalLM,
@@ -28,7 +28,7 @@ from mlora.common import (
     flash_attention_forward,
     prepare_4d_causal_attention_mask,
 )
-from mlora.common.mix_lora import _slice_tensor
+from mlora.modules.mix_lora import _slice_tensor
 from mlora.utils import copy_parameters
 
 
@@ -126,7 +126,7 @@ class PhiAttention(LLMAttention):
         rotary_emb: Tuple[torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor] = None,
         cache_position: Optional[torch.Tensor] = None,
-        past_key_value: Optional[Cache] = None,
+        past_key_value: Optional[LLMCache] = None,
     ):
         batch_size, max_seq_len, _ = hidden_states.shape
 
@@ -204,7 +204,7 @@ class PhiFlashAttention2(PhiAttention):
         rotary_emb: Tuple[torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor] = None,
         cache_position: Optional[torch.Tensor] = None,
-        past_key_value: Optional[Cache] = None,
+        past_key_value: Optional[LLMCache] = None,
     ):
         batch_size, max_seq_len, _ = hidden_states.shape
 
@@ -385,7 +385,7 @@ class PhiDecoderLayer(LLMDecoder):
         rotary_emb: Tuple[torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor] = None,
         cache_position: Optional[torch.Tensor] = None,
-        past_key_value: Optional[Cache] = None,
+        past_key_value: Optional[LLMCache] = None,
     ):
         residual = hidden_states
         hidden_states = self.input_layernorm_(hidden_states)
@@ -486,7 +486,7 @@ class PhiForCausalLM(LLMForCausalLM):
         attention_mask: torch.Tensor,
         input_tensor: torch.Tensor,
         cache_position: torch.Tensor,
-        past_key_values: Optional[Cache],
+        past_key_values: Optional[LLMCache],
     ) -> torch.Tensor:
 
         return prepare_4d_causal_attention_mask(

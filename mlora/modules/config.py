@@ -322,6 +322,7 @@ class LoraMoeConfig(LoraConfig):
     blc_alpha_: float = None
     blc_weight_: float = None
     num_experts_: int = None
+    routing_strategy_: str = "loramoe"
 
     def check(self) -> "LoraMoeConfig":
         super().check()
@@ -345,6 +346,11 @@ class LoraMoeConfig(LoraConfig):
         config["blc_weight"] = self.blc_weight_
         config["num_experts"] = self.num_experts_
 
+        return config
+
+    def expert_config(self, expert_idx: int) -> LoraConfig:
+        config = copy.deepcopy(super())
+        config.adapter_name = f"moe.{self.adapter_name}.experts.{expert_idx}"
         return config
 
 

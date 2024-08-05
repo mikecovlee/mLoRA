@@ -9,11 +9,11 @@ from torch.nn import LayerNorm
 from transformers.utils import is_flash_attn_2_available
 
 from mlora.backends import backend
-from mlora.common import (
-    Cache,
+from mlora.modules import (
     FeedForward,
     Linear,
     LLMAttention,
+    LLMCache,
     LLMDecoder,
     LLMFeedForward,
     LLMForCausalLM,
@@ -21,7 +21,7 @@ from mlora.common import (
     LLMModelInput,
     flash_attention_forward,
 )
-from mlora.common.mix_lora import _slice_tensor
+from mlora.modules.mix_lora import _slice_tensor
 from mlora.utils import copy_parameters
 
 
@@ -348,7 +348,7 @@ class GLMSelfAttention(LLMAttention):
         rotary_pos_emb: Tuple[torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor] = None,
         cache_position: Optional[torch.Tensor] = None,
-        past_key_value: Optional[Cache] = None,
+        past_key_value: Optional[LLMCache] = None,
     ):
         mixed_x_layer = self.query_key_value(hidden_states, input_args)
 
@@ -593,7 +593,7 @@ class GLMDecoderLayer(LLMDecoder):
         rotary_pos_emb: Tuple[torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor] = None,
         cache_position: Optional[torch.Tensor] = None,
-        past_key_value: Optional[Cache] = None,
+        past_key_value: Optional[LLMCache] = None,
     ):
         layernorm_output = self.input_layernorm(hidden_states)
 
@@ -714,7 +714,7 @@ class GLMForCausalLM(LLMForCausalLM):
     def get_masks(
         self,
         input_ids: torch.Tensor,
-        past_key_values: Cache,
+        past_key_values: LLMCache,
         padding_mask: torch.Tensor,
     ):
         batch_size, seq_length, _ = input_ids.shape
@@ -748,7 +748,7 @@ class GLMForCausalLM(LLMForCausalLM):
         attention_mask: torch.Tensor,
         input_tensor: torch.Tensor,
         cache_position: torch.Tensor,
-        past_key_values: Optional[Cache],
+        past_key_values: Optional[LLMCache],
     ) -> torch.Tensor:
         return self.get_masks(input_tensor, past_key_values, attention_mask)
 

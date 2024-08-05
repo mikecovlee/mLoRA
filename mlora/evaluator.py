@@ -6,8 +6,8 @@ from typing import Dict, List
 
 import torch
 
-from .common import InputData, LLMBatchConfig, LLMModelInput, MixLoraConfig, Prompt
 from .model import LLMModel
+from .modules import InputData, LLMBatchConfig, LLMModelInput, MixLoraConfig, Prompt
 from .tasks import BasicMetric, BasicTask, CommonSenseTask, task_dict
 from .tokenizer import Tokenizer
 

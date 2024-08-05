@@ -15,7 +15,7 @@ if is_bitsandbytes_available():
 else:
     from mlora.utils import Linear8bitLt, Linear4bit
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 
 def dequantize_bnb_weight(weight: torch.nn.Parameter, state=None):
@@ -336,6 +336,7 @@ class Linear(nn.Module):
 
         self.device_ = torch.device(device)
         self.base_layer_ = base_layer.to(self.device_)
+        self.selective_hook_: Dict[str, Callable] = {}
         self.loras_: Dict[str, Lora] = {}
 
     def init_lora_weight(
@@ -358,6 +359,23 @@ class Linear(nn.Module):
             )
 
         self.loras_[adapter_name].reset_parameters(lora_tensor)
+
+    def _selective_forward(
+        self, hidden_states: torch.Tensor, adapter_name: str, **kwargs
+    ) -> torch.Tensor:
+        residual = self.base_layer_.forward(hidden_states)
+
+        if adapter_name not in self.loras_:
+            return residual
+
+        if adapter_name in self.selective_hook_:
+            return self.selective_hook_(
+                residual=residual, hidden_states=hidden_states, **kwargs
+            )
+        else:
+            return self.loras_[adapter_name].forward(
+                residual=residual, hidden_states=hidden_states
+            )
 
     def _appy_dora(
         self,
