@@ -373,10 +373,8 @@ class PhiDecoderLayer(LLMDecoder):
         )
         self.resid_pdrop_ = args.resid_pdrop_
 
-    def state_dict(self) -> Dict[str, nn.Module]:
-        linear_layers = self.self_attn_.state_dict()
-        linear_layers.update(self.mlp_.state_dict())
-        return linear_layers
+    def state_dict(self) -> Tuple[Dict[str, nn.Module], Dict[str, nn.Module]]:
+        return self.self_attn_.state_dict(), self.mlp_.state_dict()
 
     def forward(
         self,

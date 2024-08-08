@@ -301,10 +301,8 @@ class Gemma2DecoderLayer(LLMDecoder):
         self.post_feedforward_layernorm_: GemmaRMSNorm = None
         self.sliding_window_ = config.sliding_window_
 
-    def state_dict(self) -> Dict[str, nn.Module]:
-        linear_layers = self.self_attn_.state_dict()
-        linear_layers.update(self.mlp_.state_dict())
-        return linear_layers
+    def state_dict(self) -> Tuple[Dict[str, nn.Module], Dict[str, nn.Module]]:
+        return self.self_attn_.state_dict(), self.mlp_.state_dict()
 
     def forward(
         self,

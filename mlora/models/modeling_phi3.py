@@ -342,10 +342,8 @@ class Phi3DecoderLayer(LLMDecoder):
         self.resid_mlp_dropout = nn.Dropout(config.resid_pdrop_)
         self.post_attention_layernorm_: Phi3RMSNorm = None
 
-    def state_dict(self) -> Dict[str, nn.Module]:
-        linear_layers = self.self_attn_.state_dict()
-        linear_layers.update(self.mlp_.state_dict())
-        return linear_layers
+    def state_dict(self) -> Tuple[Dict[str, nn.Module], Dict[str, nn.Module]]:
+        return self.self_attn_.state_dict(), self.mlp_.state_dict()
 
     def forward(
         self,

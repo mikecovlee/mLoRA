@@ -414,7 +414,7 @@ class LlamaDecoderLayer(LLMDecoder):
         self.input_layernorm_: LlamaRMSNorm = None
         self.post_attention_layernorm_: LlamaRMSNorm = None
 
-    def state_dict(self) -> Dict[str, nn.Module]:
+    def state_dict(self) -> Tuple[Dict[str, nn.Module], Dict[str, nn.Module]]:
         return self.self_attn_.state_dict(), self.mlp_.state_dict()
 
     def forward(

@@ -114,7 +114,9 @@ class LLMDecoder(metaclass=ABCMeta):
         self.mlp_: LLMFeedForward = None
 
     @classmethod
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
+    def state_dict(
+        self,
+    ) -> Tuple[Dict[str, torch.nn.Module], Dict[str, torch.nn.Module]]:
         return {}
 
     @classmethod

@@ -550,10 +550,10 @@ class GLMMLP(LLMFeedForward):
 
 class GLMDecoderLayer(LLMDecoder):
     def __init__(
-        self, self_attention: GLMSelfAttention, mlp: FeedForward, config: GLMConfig
+        self, self_attn: GLMSelfAttention, mlp: FeedForward, config: GLMConfig
     ) -> None:
         super().__init__()
-        self.layer_id_ = self_attention.layer_idx
+        self.layer_id_ = self_attn.layer_idx
         self.apply_residual_connection_post_layernorm = (
             config.apply_residual_connection_post_layernorm
         )
@@ -568,7 +568,7 @@ class GLMDecoderLayer(LLMDecoder):
             dtype=config.dtype_,
         )
         # Self-attention layer.
-        self.self_attention: GLMSelfAttention = self_attention
+        self.self_attn_: GLMSelfAttention = self_attn
         self.hidden_dropout = config.hidden_dropout_
 
         # Post attention layer norm.
@@ -581,10 +581,8 @@ class GLMDecoderLayer(LLMDecoder):
         # mlp
         self.mlp_: FeedForward = mlp
 
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
-        linear_layers = self.self_attention.state_dict()
-        linear_layers.update(self.mlp_.state_dict())
-        return linear_layers
+    def state_dict(self) -> Tuple[Dict[str, nn.Module], Dict[str, nn.Module]]:
+        return self.self_attn_.state_dict(), self.mlp_.state_dict()
 
     def forward(
         self,
@@ -597,7 +595,7 @@ class GLMDecoderLayer(LLMDecoder):
     ):
         layernorm_output = self.input_layernorm(hidden_states)
 
-        attention_output = self.self_attention.forward(
+        attention_output = self.self_attn_.forward(
             layernorm_output,
             input_args,
             rotary_pos_emb,
