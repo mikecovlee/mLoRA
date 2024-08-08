@@ -22,12 +22,12 @@ from mlora.modules import (
     LLMModelInput,
     LLMModelOutput,
     LLMOutput,
+    LLMSparseMoe,
     LoraConfig,
     LoraMoeConfig,
     MixLoraConfig,
     MolaConfig,
     lora_config_factory,
-    moe_layer_dict,
     moe_layer_factory,
     router_loss_factory,
 )
@@ -171,45 +171,41 @@ def init_lora_layer_weight(
     mlp_state_dict: Dict[str, torch.Tensor]
     all_state_dict: Dict[str, torch.Tensor] = copy.copy(attn_state_dict)
     all_state_dict.update(mlp_state_dict)
-    moe_initializer = None
+    moe_init_strategy = "none"
     if isinstance(lora_config, MixLoraConfig):
         model_prefix_name = "mixlora"
         moe_layer_name_list = list(mlp_state_dict.keys())
-        transformer_layer.mlp_.init_moe_weight(
-            args=llm_config,
-            config=lora_config,
-            gate=(
-                None
-                if lora_weights is None
-                else lora_weights[
-                    f"mixlora.layers.{transformer_layer.layer_id_}.mlp.moe_gate.weight"
-                ]
-            ),
-        )
+        moe_init_strategy = "fused_mlp"
     elif isinstance(lora_config, LoraMoeConfig):
         model_prefix_name = "loramoe"
         moe_layer_name_list = list(mlp_state_dict.keys())
-        transformer_layer.mlp_.moes_[lora_config.adapter_name] = moe_layer_factory(
-            llm_config, lora_config
-        )
-        moe_initializer = moe_layer_dict[
-            lora_config.routing_strategy_
-        ].adapter_initializer
+        moe_init_strategy = "plugin"
     elif isinstance(lora_config, MolaConfig):
         model_prefix_name = "mola"
         moe_layer_name_list = list(all_state_dict.keys())
-        transformer_layer.mlp_.moes_[lora_config.adapter_name] = moe_layer_factory(
-            llm_config, lora_config
-        )
-        moe_initializer = moe_layer_dict[
-            lora_config.routing_strategy_
-        ].adapter_initializer
+        moe_init_strategy = "plugin"
     else:
         model_prefix_name = "base_model.model.model"
         moe_layer_name_list = []
 
-    for proj_name, proj_weight in all_state_dict.items():
-        proj_weight: Linear
+    assert len(moe_layer_name_list) == 0 or moe_init_strategy in ["plugin", "fused_mlp"]
+
+    if moe_init_strategy == "fused_mlp":
+        transformer_layer.mlp_.moes_[lora_config.adapter_name] = moe_layer_factory(
+            llm_config.dim_,
+            llm_config.device_,
+            lora_config,
+            (
+                None
+                if lora_weights is None
+                else lora_weights[
+                    f"{model_prefix_name}.layers.{transformer_layer.layer_id_}.mlp.moe_gate.weight"
+                ]
+            ),
+        )
+
+    for proj_name, lora_linear in all_state_dict.items():
+        lora_linear: Linear
         if proj_name not in target_modules or not target_modules[proj_name]:
             continue
         module_name = (
@@ -219,23 +215,18 @@ def init_lora_layer_weight(
         )
         module_name = f"{model_prefix_name}.layers.{transformer_layer.layer_id_}.{module_name}.{proj_name}"
         if proj_name in moe_layer_name_list:
-            if moe_initializer is not None:
+            if moe_init_strategy == "plugin":
                 # init for gating mechanisms
-                moe_initializer(llm_config, lora_config, proj_weight)
-                if (
-                    hasattr(proj_weight, "_moe_gates")
-                    and lora_config.adapter_name in proj_weight._moe_gates
-                ):
-                    gate_weight = (
+                lora_linear.moes_[lora_config.adapter_name] = moe_layer_factory(
+                    lora_linear.in_features_,
+                    llm_config.device_,
+                    lora_config,
+                    (
                         lora_weights.get(f"{module_name}.moe_gate.weight", None)
                         if lora_weights is not None
                         else None
-                    )
-                    if gate_weight is not None:
-                        with torch.no_grad():
-                            proj_weight._moe_gates[
-                                lora_config.adapter_name
-                            ].weight.copy_(gate_weight)
+                    ),
+                )
 
             for expert_idx in range(lora_config.num_experts_):
                 if lora_weights is None:
@@ -249,7 +240,7 @@ def init_lora_layer_weight(
                         f"{module_name}.experts.{expert_idx}.lora_B.weight", None
                     )
 
-                proj_weight.init_lora_weight(
+                lora_linear.init_lora_weight(
                     lora_config.expert_config(expert_idx), (lora_a, lora_b)
                 )
         else:
@@ -260,7 +251,7 @@ def init_lora_layer_weight(
                 lora_a = lora_weights.get(f"{module_name}.lora_A.weight", None)
                 lora_b = lora_weights.get(f"{module_name}.lora_B.weight", None)
 
-            proj_weight.init_lora_weight(lora_config, (lora_a, lora_b))
+            lora_linear.init_lora_weight(lora_config, (lora_a, lora_b))
 
 
 class LLMModel(torch.nn.Module):
@@ -571,12 +562,14 @@ class LLMModel(torch.nn.Module):
                 moe_layer_name_list = []
 
             # for fused MoEs such as MixLoRA
-            moe_layer = transformer_layer.mlp_.moes_.get(adapter_name, None)
-            if moe_layer is not None and hasattr(moe_layer, "gate_"):
-                lora_weight_dict[gate_layer_name] = moe_layer.gate_.weight
+            mlp_moe_layer: LLMSparseMoe = transformer_layer.mlp_.moes_.get(
+                adapter_name, None
+            )
+            if mlp_moe_layer is not None:
+                lora_weight_dict[gate_layer_name] = mlp_moe_layer.gate_.weight
 
-            for proj_name, proj_weight in all_state_dict.items():
-                proj_weight: Linear
+            for proj_name, lora_linear in all_state_dict.items():
+                lora_linear: Linear
                 module_name = (
                     "self_attn"
                     if proj_name in attn_state_dict
@@ -584,19 +577,20 @@ class LLMModel(torch.nn.Module):
                 )
                 module_name = f"{model_prefix_name}.layers.{transformer_layer.layer_id_}.{module_name}.{proj_name}"
                 if proj_name in moe_layer_name_list:
-                    assert moe_layer is not None
-                    # for plugged MoEs such as LoRAMoE
-                    if (
-                        hasattr(proj_weight, "_moe_gates")
-                        and adapter_name in proj_weight._moe_gates
-                    ):
+                    moe_layer = (
+                        lora_linear.moes_[adapter_name]
+                        if adapter_name in lora_linear.moes_
+                        else mlp_moe_layer
+                    )
+                    # for plugged MoEs such as LoRAMoE, MoLA, etc.
+                    if adapter_name in lora_linear.moes_:
                         lora_weight_dict[f"{module_name}.moe_gate.weight"] = (
-                            proj_weight._moe_gates[adapter_name].weight
+                            lora_linear.moes_[adapter_name].gate_.weight
                         )
 
                     for expert_idx in range(moe_layer.experts_):
                         moe_lora_name = f"moe.{adapter_name}.experts.{expert_idx}"
-                        lora_obj = proj_weight.loras_.get(moe_lora_name, None)
+                        lora_obj = lora_linear.loras_.get(moe_lora_name, None)
                         if lora_obj is not None:
                             lora_weight_dict[
                                 f"{module_name}.experts.{expert_idx}.lora_A.weight"
@@ -606,7 +600,7 @@ class LLMModel(torch.nn.Module):
                             ] = lora_obj.lora_b_.weight
 
                 else:
-                    lora_obj = proj_weight.loras_.get(adapter_name, None)
+                    lora_obj = lora_linear.loras_.get(adapter_name, None)
                     if lora_obj is not None:
                         lora_weight_dict[f"{module_name}.lora_A.weight"] = (
                             lora_obj.lora_a_.weight
@@ -635,9 +629,6 @@ class LLMModel(torch.nn.Module):
                 if adapter_name in lora_layer.loras_:
                     lora_layer.loras_.pop(adapter_name, None)
                 elif adapter_name in transformer_layer.mlp_.moes_:
-                    if hasattr(lora_layer, "_moe_gates"):
-                        lora_layer._moe_gates.pop(lora_config.adapter_name, None)
-
                     for expert_idx in range(
                         transformer_layer.mlp_.moes_[adapter_name].experts_
                     ):
@@ -645,6 +636,12 @@ class LLMModel(torch.nn.Module):
                         lora_layer.loras_.pop(moe_lora_name, None)
 
                     transformer_layer.mlp_.moes_.pop(adapter_name)
+                elif adapter_name in lora_layer.moes_:
+                    for expert_idx in range(lora_layer.moes_[adapter_name].experts_):
+                        moe_lora_name = f"moe.{adapter_name}.experts.{expert_idx}"
+                        lora_layer.loras_.pop(moe_lora_name, None)
+
+                    lora_layer.moes_.pop(lora_config.adapter_name, None)
 
         return lora_config, lora_weight
 

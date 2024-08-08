@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from transformers.activations import ACT2FN
 
 from .abstracts import LLMFeedForward, LLMSparseMoe
-from .config import LLMModelConfig, MixLoraConfig
+from .config import MixLoraConfig
 
 
 def _slice_tensor(
@@ -110,16 +110,22 @@ def _mixtral_compatible_forward(
 
 
 class MixtralSparseMoe(LLMSparseMoe):
-    def __init__(self, llm_config: LLMModelConfig, config: MixLoraConfig) -> None:
+    def __init__(
+        self,
+        in_features: int,
+        device: torch.device,
+        config: MixLoraConfig,
+        gate: Optional[torch.Tensor] = None,
+    ) -> None:
         super().__init__()
 
         self.adapter_name_: str = config.adapter_name
         self.dtype_: torch.dtype = torch.float32
         self.gate_ = torch.nn.Linear(
-            llm_config.dim_,
+            in_features,
             config.num_experts_,
             bias=False,
-            device=llm_config.device_,
+            device=device,
             dtype=self.dtype_,
         )
         self.act_ = ACT2FN[config.act_fn_]
@@ -128,6 +134,16 @@ class MixtralSparseMoe(LLMSparseMoe):
         self.jitter_noise_: float = config.jitter_noise_
         self.router_profile_: bool = False
         self.profiler_: List[int] = None
+
+        if gate is None:
+            torch.nn.init.normal_(
+                self.gate_.weight,
+                mean=0.0,
+                std=config.router_init_range_,
+            )
+        else:
+            with torch.no_grad():
+                self.gate_.weight.copy_(gate)
 
     def state_dict(self) -> Dict[str, torch.nn.Module]:
         return {"gate": self.gate_.weight}
@@ -154,7 +170,9 @@ class MixtralSparseMoe(LLMSparseMoe):
                 pressure = (router_statistic_[idx] / batch_size) / sequence_length
                 self.profiler_[idx] = (self.profiler_[idx] + pressure) / 2
 
-    def forward(self, mlp: LLMFeedForward, hidden_states: torch.Tensor) -> Tuple:
+    def forward(
+        self, mlp: LLMFeedForward, residual: torch.Tensor, hidden_states: torch.Tensor
+    ) -> Tuple:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
 
         if self.jitter_noise_ > 0:
@@ -307,16 +325,22 @@ class SwitchRouterLoss(torch.nn.Module):
 
 
 class SwitchSparseMoe(LLMSparseMoe):
-    def __init__(self, llm_config: LLMModelConfig, config: MixLoraConfig) -> None:
+    def __init__(
+        self,
+        in_features: int,
+        device: torch.device,
+        config: MixLoraConfig,
+        gate: Optional[torch.Tensor] = None,
+    ) -> None:
         super().__init__()
 
         self.adapter_name_: str = config.adapter_name
         self.dtype_: torch.dtype = torch.float32
         self.gate_ = torch.nn.Linear(
-            llm_config.dim_,
+            in_features,
             config.num_experts_,
             bias=False,
-            device=llm_config.device_,
+            device=device,
             dtype=self.dtype_,
         )
         self.act_ = ACT2FN[config.act_fn_]
@@ -330,6 +354,16 @@ class SwitchSparseMoe(LLMSparseMoe):
         self.jitter_noise_: float = config.jitter_noise_
         self.router_profile_: bool = False
         self.profiler_: List[int] = None
+
+        if gate is None:
+            torch.nn.init.normal_(
+                self.gate_.weight,
+                mean=0.0,
+                std=config.router_init_range_,
+            )
+        else:
+            with torch.no_grad():
+                self.gate_.weight.copy_(gate)
 
     def _profiling(
         self, batch_size: int, sequence_length: int, router_mask: torch.Tensor
@@ -380,7 +414,9 @@ class SwitchSparseMoe(LLMSparseMoe):
         router_probs = torch.max(router_probs, dim=-1).values.unsqueeze(-1)
         return expert_index, router_probs, router_logits
 
-    def forward(self, mlp: LLMFeedForward, hidden_states: torch.Tensor) -> Tuple:
+    def forward(
+        self, mlp: LLMFeedForward, residual: torch.Tensor, hidden_states: torch.Tensor
+    ) -> Tuple:
         batch_size, sequence_length, _ = hidden_states.shape
 
         input_dtype = hidden_states.dtype

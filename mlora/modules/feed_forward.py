@@ -1,13 +1,12 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import torch
 
 from mlora.backends import backend
 
-from .abstracts import LLMFeedForward
-from .config import LLMModelConfig, LLMModelInput, MixLoraConfig
+from .abstracts import LLMFeedForward, LLMSparseMoe
+from .config import LLMModelInput
 from .lora_linear import Linear, get_range_tensor
-from .lora_moes import moe_layer_factory
 
 
 class FeedForward(torch.nn.Module):
@@ -15,7 +14,7 @@ class FeedForward(torch.nn.Module):
         super().__init__()
         self.mlp_: LLMFeedForward = mlp
         # mix of experts
-        self.moes_: torch.ModuleDict = {}
+        self.moes_: Dict[str, LLMSparseMoe] = {}
 
     def state_dict(self) -> Dict[str, Linear]:
         return self.mlp_.state_dict()
@@ -27,23 +26,6 @@ class FeedForward(torch.nn.Module):
             return self.mlp_._batch_forward(data, input_args), []
         else:
             return self._moe_forward(data, input_args)
-
-    def init_moe_weight(
-        self,
-        args: LLMModelConfig,
-        config: MixLoraConfig,
-        gate: Optional[torch.Tensor] = None,
-    ):
-        self.moes_[config.adapter_name] = moe_layer_factory(args, config)
-        if gate is None:
-            torch.nn.init.normal_(
-                self.moes_[config.adapter_name].gate_.weight,
-                mean=0.0,
-                std=config.router_init_range_,
-            )
-        else:
-            with torch.no_grad():
-                self.moes_[config.adapter_name].gate_.weight.copy_(gate)
 
     def _moe_forward(self, data: torch.Tensor, input_args: LLMModelInput):
         final_hidden_states = backend.init_tensor(data)
@@ -62,7 +44,7 @@ class FeedForward(torch.nn.Module):
             if moe_name in self.moes_:
                 current_hidden_states, current_router_outputs = self.moes_[
                     moe_name
-                ].forward(self.mlp_, data[start_idx:end_idx])
+                ].forward(self.mlp_, None, data[start_idx:end_idx])
 
                 if (
                     input_args.output_router_logits_

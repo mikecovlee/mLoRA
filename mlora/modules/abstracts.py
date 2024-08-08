@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
-from .config import AdapterConfig, LLMModelConfig, LLMModelInput
+from .config import LLMModelConfig, LLMModelInput
 
 
 @dataclass
@@ -79,16 +79,6 @@ class LLMFeedForward(metaclass=ABCMeta):
     ) -> torch.Tensor:
         pass
 
-    @classmethod
-    def _selective_forward(
-        self,
-        hidden_states: torch.Tensor,
-        adapter_name: str,
-        act_fn: Optional[torch.nn.Module] = None,
-        **kwargs,
-    ) -> torch.Tensor:
-        pass
-
 
 class LLMSparseMoe(metaclass=ABCMeta):
     def __init__(self) -> None:
@@ -96,24 +86,18 @@ class LLMSparseMoe(metaclass=ABCMeta):
 
         self.adapter_name_: str = None
         self.dtype_: torch.dtype = None
+        self.gate_: torch.nn.Linear = None
         self.experts_: int = None
         self.router_profile_: bool = False
         self.profiler_: List[int] = None
 
-    @staticmethod
-    def adapter_initializer(
-        llm_config: LLMModelConfig,
-        adapter_config: AdapterConfig,
-        linear: torch.nn.Module,
-    ):
-        pass
-
     @classmethod
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
-        return {}
-
-    @classmethod
-    def forward(self, mlp: LLMFeedForward, hidden_states: torch.Tensor) -> Tuple:
+    def forward(
+        self,
+        module: torch.nn.Module,
+        residual: torch.Tensor,
+        hidden_states: torch.Tensor,
+    ) -> Tuple:
         pass
 
 

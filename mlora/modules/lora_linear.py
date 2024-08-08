@@ -7,6 +7,7 @@ from transformers.utils import is_bitsandbytes_available
 
 from mlora.backends import backend
 
+from .abstracts import LLMSparseMoe
 from .config import LLMModelInput, LoraConfig
 
 if is_bitsandbytes_available():
@@ -15,7 +16,7 @@ if is_bitsandbytes_available():
 else:
     from mlora.utils import Linear8bitLt, Linear4bit
 
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 
 def dequantize_bnb_weight(weight: torch.nn.Parameter, state=None):
@@ -311,7 +312,10 @@ class Lora(nn.Module):
         return mag_norm_scale * residual + mag_norm_scale * result_lora
 
     def forward(
-        self, residual: torch.Tensor, hidden_states: torch.Tensor
+        self,
+        module: nn.Module,
+        residual: torch.Tensor,
+        hidden_states: torch.Tensor,
     ) -> torch.Tensor:
         result_lora = (
             self.lora_b_(self.lora_a_(self.dropout_(hidden_states.to(torch.float32))))
@@ -336,8 +340,16 @@ class Linear(nn.Module):
 
         self.device_ = torch.device(device)
         self.base_layer_ = base_layer.to(self.device_)
-        self.selective_hook_: Dict[str, Callable] = {}
         self.loras_: Dict[str, Lora] = {}
+        self.moes_: Dict[str, LLMSparseMoe] = {}
+
+        if isinstance(self.base_layer_, Linear4bit):
+            self.out_features_, self.in_features_ = (
+                self.base_layer_.out_features,
+                self.base_layer_.in_features,
+            )
+        else:
+            self.out_features_, self.in_features_ = self.base_layer_.weight.shape
 
     def init_lora_weight(
         self, lora_config: LoraConfig, lora_tensor=(None, None), adapter_name=None
@@ -345,37 +357,15 @@ class Linear(nn.Module):
         if adapter_name is None:
             adapter_name = lora_config.adapter_name
 
-        if isinstance(self.base_layer_, Linear4bit):
-            out_dim, in_dim = (
-                self.base_layer_.out_features,
-                self.base_layer_.in_features,
-            )
-        else:
-            out_dim, in_dim = self.base_layer_.weight.shape
-
         if adapter_name not in self.loras_:
             self.loras_[adapter_name] = Lora(
-                self.base_layer_, (in_dim, out_dim), lora_config, self.device_
+                self.base_layer_,
+                (self.in_features_, self.out_features_),
+                lora_config,
+                self.device_,
             )
 
         self.loras_[adapter_name].reset_parameters(lora_tensor)
-
-    def _selective_forward(
-        self, hidden_states: torch.Tensor, adapter_name: str, **kwargs
-    ) -> torch.Tensor:
-        residual = self.base_layer_.forward(hidden_states)
-
-        if adapter_name not in self.loras_:
-            return residual
-
-        if adapter_name in self.selective_hook_:
-            return self.selective_hook_(
-                residual=residual, hidden_states=hidden_states, **kwargs
-            )
-        else:
-            return self.loras_[adapter_name].forward(
-                residual=residual, hidden_states=hidden_states
-            )
 
     def _appy_dora(
         self,
@@ -482,20 +472,24 @@ class Linear(nn.Module):
             start_idx = lora_config.batch_start_idx_
             end_idx = lora_config.batch_end_idx_
 
-            if adapter_name == "" or adapter_name not in self.loras_:
+            if adapter_name in self.loras_:
+                fwd_fn = self.loras_[adapter_name].forward
+            elif adapter_name in self.moes_:
+                fwd_fn = self.moes_[adapter_name].forward
+            else:
                 continue
 
-            lora_data = self.loras_[adapter_name].forward(
-                residual[start_idx:end_idx], hidden_states[start_idx:end_idx]
+            lora_data = fwd_fn(
+                self, residual[start_idx:end_idx], hidden_states[start_idx:end_idx]
             )
-            backend.index_copy(next_states, lora_range[start_idx:end_idx], lora_data)
+            backend.index_copy(next_states, 0, lora_range[start_idx:end_idx], lora_data)
 
         return next_states
 
     def forward(
         self, hidden_states: torch.Tensor, input_args: LLMModelInput
     ) -> torch.Tensor:
-        if input_args.efficient_operator_:
+        if input_args.efficient_operator_ and len(self.moes_) == 0:
             return self._efficient_impl(hidden_states, input_args)
         else:
             return self._compatible_impl(hidden_states, input_args)

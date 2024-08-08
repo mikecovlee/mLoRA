@@ -426,6 +426,6 @@ def lora_config_factory(config: Dict[str, any]) -> LoraConfig:
             config["routing_strategy"]
         ]
     else:
-        raise NotImplementedError()
+        config_class = LoraConfig
 
     return config_class.from_config(config).check()

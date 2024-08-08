@@ -321,19 +321,6 @@ class LlamaMLP(LLMFeedForward):
         w3 = self.w3_.forward(data, input_args)
         return self.w2_.forward(self.act_(w1) * w3, input_args)
 
-    def _selective_forward(
-        self,
-        hidden_states: torch.Tensor,
-        adapter_name: str,
-        act_fn: Optional[nn.Module] = None,
-        **kwargs,
-    ) -> torch.Tensor:
-        if act_fn is None:
-            act_fn = self.act_
-        w1 = self.w1_._selective_forward(hidden_states, adapter_name, **kwargs)
-        w3 = self.w3_._selective_forward(hidden_states, adapter_name, **kwargs)
-        return self.w2_._selective_forward(act_fn(w1) * w3, adapter_name, **kwargs)
-
     def _mixlora_forward(
         self, moe_name, act_fn, expert_mask, hidden_states, input_dtype
     ):
