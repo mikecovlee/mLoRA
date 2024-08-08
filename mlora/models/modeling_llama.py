@@ -321,6 +321,32 @@ class LlamaMLP(LLMFeedForward):
         w3 = self.w3_.forward(data, input_args)
         return self.w2_.forward(self.act_(w1) * w3, input_args)
 
+    def _lora_forward(
+        self, lora_name: str, act_fn: nn.Module, data: torch.Tensor
+    ) -> torch.Tensor:
+        # Applying LoRA weights to FFN weights
+        if lora_name in self.w1_.loras_:
+            w1 = self.w1_.loras_[lora_name].forward(
+                self.w1_.base_layer_.forward(data), data
+            )
+        else:
+            w1 = self.w1_.base_layer_.forward(data)
+
+        if lora_name in self.w3_.loras_:
+            w3 = self.w3_.loras_[lora_name].forward(
+                self.w3_.base_layer_.forward(data), data
+            )
+        else:
+            w3 = self.w3_.base_layer_.forward(data)
+
+        act_result = act_fn(w1) * w3
+        if lora_name in self.w2_.loras_:
+            return self.w2_.loras_[lora_name].forward(
+                self.w2_.base_layer_.forward(act_result), act_result
+            )
+        else:
+            return self.w2_.base_layer_.forward(act_result)
+
     def _mixlora_forward(
         self, moe_name, act_fn, expert_mask, hidden_states, input_dtype
     ):

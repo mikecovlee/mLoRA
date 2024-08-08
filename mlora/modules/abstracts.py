@@ -79,6 +79,12 @@ class LLMFeedForward(metaclass=ABCMeta):
     ) -> torch.Tensor:
         pass
 
+    @classmethod
+    def _lora_forward(
+        self, lora_name: str, act_fn: torch.nn.Module, data: torch.Tensor
+    ) -> torch.Tensor:
+        pass
+
 
 class LLMMoeBlock(metaclass=ABCMeta):
     def __init__(self) -> None:
