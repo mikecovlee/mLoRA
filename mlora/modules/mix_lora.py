@@ -171,7 +171,7 @@ class MixtralSparseMoe(LLMMoeBlock):
                 self.profiler_[idx] = (self.profiler_[idx] + pressure) / 2
 
     def forward(
-        self, mlp: LLMFeedForward, residual: torch.Tensor, hidden_states: torch.Tensor
+        self, residual: torch.Tensor, hidden_states: torch.Tensor, mlp: LLMFeedForward
     ) -> Tuple:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
 
@@ -415,7 +415,10 @@ class SwitchSparseMoe(LLMMoeBlock):
         return expert_index, router_probs, router_logits
 
     def forward(
-        self, mlp: LLMFeedForward, residual: torch.Tensor, hidden_states: torch.Tensor
+        self,
+        residual: torch.Tensor,
+        hidden_states: torch.Tensor,
+        mlp: LLMFeedForward,
     ) -> Tuple:
         batch_size, sequence_length, _ = hidden_states.shape
 

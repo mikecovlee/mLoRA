@@ -313,7 +313,6 @@ class Lora(nn.Module):
 
     def forward(
         self,
-        module: nn.Module,
         residual: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
@@ -474,13 +473,17 @@ class Linear(nn.Module):
 
             if adapter_name in self.loras_:
                 fwd_fn = self.loras_[adapter_name].forward
+                kwargs = {}
             elif adapter_name in self.moes_:
                 fwd_fn = self.moes_[adapter_name].forward
+                kwargs = {"lora_linear": self}
             else:
                 continue
 
             lora_data = fwd_fn(
-                self, residual[start_idx:end_idx], hidden_states[start_idx:end_idx]
+                residual[start_idx:end_idx],
+                hidden_states[start_idx:end_idx],
+                **kwargs,
             )
             backend.index_copy(next_states, 0, lora_range[start_idx:end_idx], lora_data)
 

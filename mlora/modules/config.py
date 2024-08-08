@@ -319,16 +319,12 @@ class MixLoraConfig(LoraConfig):
 
 @dataclass
 class LoraMoeConfig(LoraConfig):
-    blc_alpha_: float = None
-    blc_weight_: float = None
     num_experts_: int = None
     router_init_range_: float = None
     routing_strategy_: str = "loramoe"
 
     def check(self) -> "LoraMoeConfig":
         super().check()
-        assert isinstance(self.blc_alpha_, float) and self.blc_alpha_ >= 0.0
-        assert isinstance(self.blc_weight_, float) and self.blc_weight_ >= 0.0
         assert isinstance(self.num_experts_, int) and self.num_experts_ > 0
         assert (
             isinstance(self.router_init_range_, float) and self.router_init_range_ >= 0
@@ -339,8 +335,6 @@ class LoraMoeConfig(LoraConfig):
     @staticmethod
     def from_config(config: Dict[str, any]) -> "LoraMoeConfig":
         return LoraMoeConfig(
-            blc_alpha_=config.get("blc_alpha", 0.0),
-            blc_weight_=config.get("blc_weight", 0.0),
             num_experts_=config["num_experts"],
             router_init_range_=config.get("router_init_range", 5.0),
             **LoraConfig.from_config(config).__dict__,
@@ -349,8 +343,6 @@ class LoraMoeConfig(LoraConfig):
     def export(self) -> Dict[str, any]:
         config = super().export()
         config["peft_type"] = "LORAMOE"
-        config["blc_alpha"] = self.blc_alpha_
-        config["blc_weight"] = self.blc_weight_
         config["num_experts"] = self.num_experts_
 
         return config

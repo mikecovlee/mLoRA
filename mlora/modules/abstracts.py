@@ -100,9 +100,9 @@ class LLMMoeBlock(metaclass=ABCMeta):
     @classmethod
     def forward(
         self,
-        module: torch.nn.Module,
         residual: torch.Tensor,
         hidden_states: torch.Tensor,
+        **kwargs,
     ) -> Tuple:
         pass
 

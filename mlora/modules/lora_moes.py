@@ -48,15 +48,16 @@ class LoraMoe(LLMMoeBlock):
 
     def forward(
         self,
-        linear: Linear,
         residual: torch.Tensor,
         hidden_states: torch.Tensor,
+        lora_linear: Optional[Linear] = None,
     ) -> Tuple:
+        assert lora_linear is not None
         route_weight = torch.nn.functional.softmax(
             self.gate_(hidden_states.to(self.dtype_)), dim=-1, dtype=torch.float32
         ).to(hidden_states.dtype)
         for expert_idx in range(self.experts_):
-            lora = linear.loras_[f"moe.{self.adapter_name_}.experts.{expert_idx}"]
+            lora = lora_linear.loras_[f"moe.{self.adapter_name_}.experts.{expert_idx}"]
             residual = residual + (
                 torch.unsqueeze(route_weight[:, :, expert_idx], -1)
                 * (
@@ -104,10 +105,11 @@ class MolaSparseMoe(LLMMoeBlock):
 
     def forward(
         self,
-        linear: Linear,
         residual: torch.Tensor,
         hidden_states: torch.Tensor,
+        lora_linear: Optional[Linear] = None,
     ):
+        assert lora_linear is not None
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.view(-1, hidden_dim).to(self.dtype_)
@@ -123,13 +125,13 @@ class MolaSparseMoe(LLMMoeBlock):
         ).permute(2, 1, 0)
 
         final_hidden_states = torch.zeros(
-            (batch_size * sequence_length, linear.out_features_),
+            (batch_size * sequence_length, lora_linear.out_features_),
             dtype=self.dtype_,
             device=hidden_states.device,
         )
 
         for expert_idx in range(self.experts_):
-            lora = linear.loras_[f"moe.{self.adapter_name_}.experts.{expert_idx}"]
+            lora = lora_linear.loras_[f"moe.{self.adapter_name_}.experts.{expert_idx}"]
             idx, top_x = torch.where(expert_mask[expert_idx])
 
             if top_x.shape[0] == 0:
@@ -152,7 +154,7 @@ class MolaSparseMoe(LLMMoeBlock):
             )
 
         final_hidden_states = final_hidden_states.reshape(
-            batch_size, sequence_length, linear.out_features_
+            batch_size, sequence_length, lora_linear.out_features_
         ).to(input_dtype)
 
         return residual + final_hidden_states
