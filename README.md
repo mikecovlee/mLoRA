@@ -12,7 +12,7 @@ m-LoRA (short for Multi-LoRA) is an open-source LLMOps framework developed by th
 
 - Support for multiple PEFT algorithms and various pre-trained models.
 
-- Exclusive Mo-LoRA (Mixture of LoRAs) optimization for [MixLoRA](https://github.com/TUDB-Labs/MixLoRA).
+- Mo-LoRA (Mixture of LoRAs) optimization, mainly for [MixLoRA](https://github.com/TUDB-Labs/MixLoRA).
 
 You can try m-LoRA with [Google Colab](https://githubtocolab.com/mikecovlee/mLoRA/blob/main/misc/finetune-demo.ipynb) before local installation.
 
@@ -54,12 +54,16 @@ You can use the `MLORA_BACKEND_TYPE` environment variable to force m-LoRA to use
 |         | PEFT Methods                                             | Arguments*                                          |
 |---------|----------------------------------------------------------|-----------------------------------------------------|
 | &check; | [QLoRA](https://arxiv.org/abs/2402.12354)                | See *Quantize Methods*                              |
-| &check; | [LoRA+](https://arxiv.org/abs/2402.12354)                | `loraplus_lr_ratio: 20.0`                           |
-| &check; | [DoRA](https://arxiv.org/abs/2402.09353)                 | `use_dora: true`                                    |
-| &check; | [rsLoRA](https://arxiv.org/abs/2312.03732)               | `use_rslora: true`                                  |
+| &check; | [LoRA+](https://arxiv.org/abs/2402.12354)                | `"loraplus_lr_ratio": 20.0`                         |
+| &check; | [DoRA](https://arxiv.org/abs/2402.09353)                 | `"use_dora": true`                                  |
+| &check; | [rsLoRA](https://arxiv.org/abs/2312.03732)               | `"use_rslora": true`                                |
+| &check; | [MoLA](https://arxiv.org/abs/2402.08562)                 | `"routing_strategy": "mola", "num_experts": 8`      |
+| &check; | [LoRAMoE](https://arxiv.org/abs/2312.09979)              | `"routing_strategy": "loramoe", "num_experts": 8`   |
 | &check; | [MixLoRA](https://arxiv.org/abs/2404.15159)              | See [MixLoRA](https://github.com/TUDB-Labs/MixLoRA) |
 
 *: Arguments of configuration file
+
+Note: Auxiliary Loss is not currently supported for Mo-LoRA (Mixture of LoRAs) methods other than MixLoRA
 
 ## Supported Attention Methods
 
