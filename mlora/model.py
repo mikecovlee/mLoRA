@@ -564,7 +564,7 @@ class LLMModel(torch.nn.Module):
                 model_prefix_name = "loramoe"
                 moe_layer_name_list = list(mlp_state_dict.keys())
             elif isinstance(self.adapter_configs_[adapter_name], MolaConfig):
-                model_prefix_name = "loramoe"
+                model_prefix_name = "mola"
                 moe_layer_name_list = list(all_state_dict.keys())
             else:
                 model_prefix_name = "base_model.model.model"
@@ -622,16 +622,22 @@ class LLMModel(torch.nn.Module):
     ) -> Tuple[LoraConfig, Dict[str, torch.Tensor]]:
         assert adapter_name in self.adapter_configs_, "adapter not exist"
         lora_weight = self.get_adapter_weight_dict(adapter_name)
+        lora_config = self.adapter_configs_.pop(adapter_name)
         self.output_.layers_.pop(adapter_name)
         for transformer_layer in self.model_.layers_:
-            lora_layer_list = []
-            for layer in transformer_layer.state_dict().values():
-                lora_layer_list.append(layer)
+            attn_state_dict, mlp_state_dict = transformer_layer.state_dict()
+            attn_state_dict: Dict[str, torch.Tensor]
+            mlp_state_dict: Dict[str, torch.Tensor]
+            lora_layer_list = list(attn_state_dict.values())
+            lora_layer_list.extend(mlp_state_dict.values())
 
             for lora_layer in lora_layer_list:
                 if adapter_name in lora_layer.loras_:
                     lora_layer.loras_.pop(adapter_name, None)
                 elif adapter_name in transformer_layer.mlp_.moes_:
+                    if hasattr(lora_layer, "_moe_gates"):
+                        lora_layer._moe_gates.pop(lora_config.adapter_name, None)
+
                     for expert_idx in range(
                         transformer_layer.mlp_.moes_[adapter_name].experts_
                     ):
@@ -640,7 +646,6 @@ class LLMModel(torch.nn.Module):
 
                     transformer_layer.mlp_.moes_.pop(adapter_name)
 
-        lora_config = self.adapter_configs_.pop(adapter_name)
         return lora_config, lora_weight
 
     def load_adapter(self, name_or_path: str, adapter_name: Optional[str] = None):
