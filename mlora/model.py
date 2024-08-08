@@ -25,6 +25,7 @@ from mlora.modules import (
     LoraConfig,
     LoraMoeConfig,
     MixLoraConfig,
+    MolaConfig,
     lora_config_factory,
     moe_layer_dict,
     moe_layer_factory,
@@ -188,6 +189,15 @@ def init_lora_layer_weight(
     elif isinstance(lora_config, LoraMoeConfig):
         model_prefix_name = "loramoe"
         moe_layer_name_list = list(mlp_state_dict.keys())
+        transformer_layer.mlp_.moes_[lora_config.adapter_name] = moe_layer_factory(
+            llm_config, lora_config
+        )
+        moe_initializer = moe_layer_dict[
+            lora_config.routing_strategy_
+        ].adapter_initializer
+    elif isinstance(lora_config, MolaConfig):
+        model_prefix_name = "mola"
+        moe_layer_name_list = list(all_state_dict.keys())
         transformer_layer.mlp_.moes_[lora_config.adapter_name] = moe_layer_factory(
             llm_config, lora_config
         )
@@ -553,6 +563,9 @@ class LLMModel(torch.nn.Module):
             elif isinstance(self.adapter_configs_[adapter_name], LoraMoeConfig):
                 model_prefix_name = "loramoe"
                 moe_layer_name_list = list(mlp_state_dict.keys())
+            elif isinstance(self.adapter_configs_[adapter_name], MolaConfig):
+                model_prefix_name = "loramoe"
+                moe_layer_name_list = list(all_state_dict.keys())
             else:
                 model_prefix_name = "base_model.model.model"
                 moe_layer_name_list = []

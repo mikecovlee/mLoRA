@@ -361,14 +361,71 @@ class LoraMoeConfig(LoraConfig):
         return config
 
 
+@dataclass
+class MolaConfig(LoraConfig):
+    top_k_: int = None
+    num_experts_: int = None
+    router_init_range_: float = None
+    routing_strategy_: str = "mola"
+
+    def check(self) -> "MolaConfig":
+        super().check()
+        assert isinstance(self.top_k_, int) and self.top_k_ > 0
+        assert isinstance(self.num_experts_, int) and self.num_experts_ > 0
+        assert (
+            isinstance(self.router_init_range_, float) and self.router_init_range_ >= 0
+        )
+
+        return self
+
+    @staticmethod
+    def from_config(config: Dict[str, any]) -> "MolaConfig":
+        return MolaConfig(
+            top_k_=config.get("top_k", 2),
+            num_experts_=config["num_experts"],
+            router_init_range_=config.get("router_init_range", 5.0),
+            **LoraConfig.from_config(config).__dict__,
+        )
+
+    def export(self) -> Dict[str, any]:
+        config = super().export()
+        config["peft_type"] = "MOLA"
+        config["top_k"] = self.top_k_
+        config["num_experts"] = self.num_experts_
+
+        return config
+
+    def expert_config(self, expert_idx: int) -> LoraConfig:
+        config = copy.deepcopy(super())
+        config.adapter_name = f"moe.{self.adapter_name}.experts.{expert_idx}"
+        return config
+
+
+peft_type_dict = {
+    "LORA": LoraConfig,
+    "MIXLORA": MixLoraConfig,
+    "LORAMOE": LoraMoeConfig,
+    "MOLA": MolaConfig,
+}
+
+routing_strategy_dict = {
+    "mixlora": MixLoraConfig,
+    "mixlora-switch": MixLoraConfig,
+    "loramoe": LoraMoeConfig,
+    "mola": MolaConfig,
+}
+
+
 def lora_config_factory(config: Dict[str, any]) -> LoraConfig:
-    if ("peft_type" in config and config["peft_type"] == "MIXLORA") or (
-        config.get("routing_strategy", "") in ["mixlora", "mixlora-switch"]
+    if peft_type_dict.get(config.get("peft_type", ""), None) is not None:
+        config_class: TypeAlias[AdapterConfig] = peft_type_dict[config["peft_type"]]
+    elif (
+        routing_strategy_dict.get(config.get("routing_strategy", ""), None) is not None
     ):
-        return MixLoraConfig.from_config(config).check()
-    if ("peft_type" in config and config["peft_type"] == "LORAMOE") or (
-        config.get("routing_strategy", "") == "loramoe"
-    ):
-        return LoraMoeConfig.from_config(config).check()
+        config_class: TypeAlias[AdapterConfig] = routing_strategy_dict[
+            config["routing_strategy"]
+        ]
     else:
-        return LoraConfig.from_config(config).check()
+        raise NotImplementedError()
+
+    return config_class.from_config(config).check()
