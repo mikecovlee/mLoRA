@@ -69,10 +69,13 @@ class LoraMoe(LLMSparseMoe):
         linear.selective_hook_[adapter_config.adapter_name] = LoraMoe.selective_hook
 
     def forward(self, mlp: LLMFeedForward, hidden_states: torch.Tensor) -> Tuple:
-        return mlp._selective_forward(hidden_states, self.adapter_name_, moe_layer=self)
+        return (
+            mlp._selective_forward(hidden_states, self.adapter_name_, moe_layer=self),
+            None,
+        )
 
 
-router_loss_dict = {"mixtral": MixtralRouterLoss, "switch": SwitchRouterLoss}
+router_loss_dict = {"mixlora": MixtralRouterLoss, "mixlora-switch": SwitchRouterLoss}
 
 
 def router_loss_factory(config: MixLoraConfig) -> torch.nn.Module:
@@ -85,13 +88,13 @@ def router_loss_factory(config: MixLoraConfig) -> torch.nn.Module:
 
 
 moe_layer_dict = {
-    "mixtral": MixtralSparseMoe,
-    "switch": SwitchSparseMoe,
+    "mixlora": MixtralSparseMoe,
+    "mixlora-switch": SwitchSparseMoe,
     "loramoe": LoraMoe,
 }
 
 
 def moe_layer_factory(args: LLMModelConfig, config: MixLoraConfig) -> torch.nn.Module:
-    if config.routing_strategy_ not in router_loss_dict:
+    if config.routing_strategy_ not in moe_layer_dict:
         raise ValueError(f"Unknown routing strategy {config.routing_strategy_}")
     return moe_layer_dict[config.routing_strategy_](args, config)

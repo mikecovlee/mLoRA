@@ -163,6 +163,15 @@ class TrainConfig(DispatcherConfig):
         # preparing optimizer
         paramas_count = sum(t.numel() for t in train_params.values() if t.requires_grad)
         logging.info(f"{self.adapter_name} total trainable params: {paramas_count}")
+        paramas_count = sum(
+            t.numel()
+            for n, t in train_params.items()
+            if "moe_gate" not in n and t.requires_grad
+        )
+        if paramas_count > 0:
+            logging.info(
+                f"{self.adapter_name} total trainable params (except gates): {paramas_count}"
+            )
         grouped_parameters = self._optimizer_grouped_parameters(train_params)
         if self.optimizer_type == "sgd":
             self.optimizer_ = torch.optim.SGD(

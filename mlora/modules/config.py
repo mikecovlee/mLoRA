@@ -196,7 +196,7 @@ class LoraConfig(AdapterConfig):
         return config
 
 
-available_routing_strategies = ["mixtral", "switch"]
+available_routing_strategies = ["mixlora", "mixlora-switch"]
 
 
 @dataclass
@@ -240,9 +240,9 @@ class MixLoraConfig(LoraConfig):
         assert self.act_fn_ is None or (
             isinstance(self.act_fn_, str) and self.act_fn_ in ACT2FN
         )
-        if self.routing_strategy_ == "mixtral":
+        if self.routing_strategy_ == "mixlora":
             assert isinstance(self.top_k_, int) and self.top_k_ > 0
-        elif self.routing_strategy_ == "switch":
+        elif self.routing_strategy_ == "mixlora-switch":
             assert (
                 isinstance(self.router_z_loss_coef_, float)
                 and self.router_z_loss_coef_ >= 0
@@ -270,11 +270,11 @@ class MixLoraConfig(LoraConfig):
         # silu for mixtral or gelu_new for switch transformers
         # left blank to automatically use the original act_fn of FFN
         lora_config.act_fn_ = config.get("act_fn", None)
-        if lora_config.routing_strategy_ == "mixtral":
+        if lora_config.routing_strategy_ == "mixlora":
             lora_config.router_init_range_ = config.get("router_init_range", 0.02)
             lora_config.jitter_noise_ = config.get("jitter_noise", 0.0)
             lora_config.top_k_ = config.get("top_k", 2)
-        elif lora_config.routing_strategy_ == "switch":
+        elif lora_config.routing_strategy_ == "mixlora-switch":
             lora_config.router_init_range_ = config.get("router_init_range", 1.0)
             lora_config.jitter_noise_ = config.get("jitter_noise", 0.01)
             lora_config.router_z_loss_coef_ = config.get(
@@ -300,9 +300,9 @@ class MixLoraConfig(LoraConfig):
         config["num_experts"] = self.num_experts_
         if self.act_fn_ is not None:
             config["act_fn"] = self.act_fn_
-        if self.routing_strategy_ == "mixtral":
+        if self.routing_strategy_ == "mixlora":
             config["top_k"] = self.top_k_
-        elif self.routing_strategy_ == "switch":
+        elif self.routing_strategy_ == "mixlora-switch":
             config["expert_capacity"] = self.expert_capacity_
             config["sparse_step"] = self.sparse_step_
 
@@ -322,6 +322,7 @@ class LoraMoeConfig(LoraConfig):
     blc_alpha_: float = None
     blc_weight_: float = None
     num_experts_: int = None
+    router_init_range_: float = None
     routing_strategy_: str = "loramoe"
 
     def check(self) -> "LoraMoeConfig":
@@ -329,6 +330,11 @@ class LoraMoeConfig(LoraConfig):
         assert isinstance(self.blc_alpha_, float) and self.blc_alpha_ >= 0.0
         assert isinstance(self.blc_weight_, float) and self.blc_weight_ >= 0.0
         assert isinstance(self.num_experts_, int) and self.num_experts_ > 0
+        assert (
+            isinstance(self.router_init_range_, float) and self.router_init_range_ >= 0
+        )
+
+        return self
 
     @staticmethod
     def from_config(config: Dict[str, any]) -> "LoraMoeConfig":
@@ -336,6 +342,7 @@ class LoraMoeConfig(LoraConfig):
             blc_alpha_=config.get("blc_alpha", 0.0),
             blc_weight_=config.get("blc_weight", 0.0),
             num_experts_=config["num_experts"],
+            router_init_range_=config.get("router_init_range", 0.02),
             **LoraConfig.from_config(config).__dict__,
         )
 
@@ -355,11 +362,13 @@ class LoraMoeConfig(LoraConfig):
 
 
 def lora_config_factory(config: Dict[str, any]) -> LoraConfig:
-    if (
-        "peft_type" in config and config["peft_type"] == "MIXLORA"
-    ) or "routing_strategy" in config:
+    if ("peft_type" in config and config["peft_type"] == "MIXLORA") or (
+        config.get("routing_strategy", "") in ["mixlora", "mixlora-switch"]
+    ):
         return MixLoraConfig.from_config(config).check()
-    if "peft_type" in config and config["peft_type"] == "LORAMOE":
+    if ("peft_type" in config and config["peft_type"] == "LORAMOE") or (
+        config.get("routing_strategy", "") == "loramoe"
+    ):
         return LoraMoeConfig.from_config(config).check()
     else:
         return LoraConfig.from_config(config).check()

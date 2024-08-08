@@ -26,6 +26,7 @@ from mlora.modules import (
     LoraMoeConfig,
     MixLoraConfig,
     lora_config_factory,
+    moe_layer_dict,
     moe_layer_factory,
     router_loss_factory,
 )
@@ -190,6 +191,9 @@ def init_lora_layer_weight(
         transformer_layer.mlp_.moes_[lora_config.adapter_name] = moe_layer_factory(
             llm_config, lora_config
         )
+        moe_initializer = moe_layer_dict[
+            lora_config.routing_strategy_
+        ].adapter_initializer
     else:
         model_prefix_name = "base_model.model.model"
         moe_layer_name_list = []
@@ -208,6 +212,26 @@ def init_lora_layer_weight(
             if moe_initializer is not None:
                 # init for gating mechanisms
                 moe_initializer(llm_config, lora_config, proj_weight)
+                if (
+                    hasattr(proj_weight, "_moe_gates")
+                    and lora_config.adapter_name in proj_weight._moe_gates
+                ):
+                    gate_weight = (
+                        lora_weights.get(f"{module_name}.moe_gate.weight", None)
+                        if lora_weights is not None
+                        else None
+                    )
+                    if gate_weight is None:
+                        torch.nn.init.normal_(
+                            proj_weight._moe_gates[lora_config.adapter_name].weight,
+                            mean=0.0,
+                            std=lora_config.router_init_range_,
+                        )
+                    else:
+                        with torch.no_grad():
+                            proj_weight._moe_gates[
+                                lora_config.adapter_name
+                            ].weight.copy_(gate_weight)
 
             for expert_idx in range(lora_config.num_experts_):
                 if lora_weights is None:
@@ -559,7 +583,7 @@ class LLMModel(torch.nn.Module):
                         hasattr(proj_weight, "_moe_gates")
                         and adapter_name in proj_weight._moe_gates
                     ):
-                        lora_weight_dict[f"{module_name}.mlp.moe_gate.weight"] = (
+                        lora_weight_dict[f"{module_name}.moe_gate.weight"] = (
                             proj_weight._moe_gates[adapter_name].weight
                         )
 

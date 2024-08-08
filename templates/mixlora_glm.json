@@ -25,7 +25,7 @@
                 "dense_h_to_4h": true,
                 "dense_4h_to_h": true
             },
-            "routing_strategy": "mixtral",
+            "routing_strategy": "mixlora",
             "num_experts": 8,
             "top_k": 2,
             "group_by_length": false
