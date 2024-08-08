@@ -21,8 +21,8 @@ from mlora.modules import (
     LLMModelConfig,
     LLMModelInput,
     LLMModelOutput,
+    LLMMoeBlock,
     LLMOutput,
-    LLMSparseMoe,
     LoraConfig,
     LoraMoeConfig,
     MixLoraConfig,
@@ -562,7 +562,7 @@ class LLMModel(torch.nn.Module):
                 moe_layer_name_list = []
 
             # for fused MoEs such as MixLoRA
-            mlp_moe_layer: LLMSparseMoe = transformer_layer.mlp_.moes_.get(
+            mlp_moe_layer: LLMMoeBlock = transformer_layer.mlp_.moes_.get(
                 adapter_name, None
             )
             if mlp_moe_layer is not None:

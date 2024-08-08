@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 
-from .abstracts import LLMSparseMoe
+from .abstracts import LLMMoeBlock
 from .config import LoraMoeConfig, MixLoraConfig, MolaConfig
 from .lora_linear import Linear
 from .mix_lora import (
@@ -15,7 +15,7 @@ from .mix_lora import (
 )
 
 
-class LoraMoe(LLMSparseMoe):
+class LoraMoe(LLMMoeBlock):
     def __init__(
         self,
         in_features: int,
@@ -70,7 +70,7 @@ class LoraMoe(LLMSparseMoe):
         return residual
 
 
-class MolaSparseMoe(LLMSparseMoe):
+class MolaSparseMoe(LLMMoeBlock):
     def __init__(
         self,
         in_features: int,

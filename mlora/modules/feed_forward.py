@@ -4,7 +4,7 @@ import torch
 
 from mlora.backends import backend
 
-from .abstracts import LLMFeedForward, LLMSparseMoe
+from .abstracts import LLMFeedForward, LLMMoeBlock
 from .config import LLMModelInput
 from .lora_linear import Linear, get_range_tensor
 
@@ -14,7 +14,7 @@ class FeedForward(torch.nn.Module):
         super().__init__()
         self.mlp_: LLMFeedForward = mlp
         # mix of experts
-        self.moes_: Dict[str, LLMSparseMoe] = {}
+        self.moes_: Dict[str, LLMMoeBlock] = {}
 
     def state_dict(self) -> Dict[str, Linear]:
         return self.mlp_.state_dict()

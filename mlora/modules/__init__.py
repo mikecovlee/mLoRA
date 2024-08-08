@@ -5,8 +5,8 @@ from .abstracts import (
     LLMDecoder,
     LLMFeedForward,
     LLMForCausalLM,
+    LLMMoeBlock,
     LLMOutput,
-    LLMSparseMoe,
 )
 from .attention import (
     eager_attention_forward,
@@ -95,7 +95,7 @@ __all__ = [
     "moe_layer_factory",
     "LLMAttention",
     "LLMFeedForward",
-    "LLMSparseMoe",
+    "LLMMoeBlock",
     "LLMDecoder",
     "LLMOutput",
     "LLMForCausalLM",

@@ -80,7 +80,7 @@ class LLMFeedForward(metaclass=ABCMeta):
         pass
 
 
-class LLMSparseMoe(metaclass=ABCMeta):
+class LLMMoeBlock(metaclass=ABCMeta):
     def __init__(self) -> None:
         super().__init__()
 

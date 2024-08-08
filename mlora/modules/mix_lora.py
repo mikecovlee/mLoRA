@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from transformers.activations import ACT2FN
 
-from .abstracts import LLMFeedForward, LLMSparseMoe
+from .abstracts import LLMFeedForward, LLMMoeBlock
 from .config import MixLoraConfig
 
 
@@ -109,7 +109,7 @@ def _mixtral_compatible_forward(
     return final_expert_states
 
 
-class MixtralSparseMoe(LLMSparseMoe):
+class MixtralSparseMoe(LLMMoeBlock):
     def __init__(
         self,
         in_features: int,
@@ -324,7 +324,7 @@ class SwitchRouterLoss(torch.nn.Module):
         return self.z_loss_coef * z_loss + self.aux_loss_coef * aux_loss
 
 
-class SwitchSparseMoe(LLMSparseMoe):
+class SwitchSparseMoe(LLMMoeBlock):
     def __init__(
         self,
         in_features: int,

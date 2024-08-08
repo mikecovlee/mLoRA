@@ -7,7 +7,7 @@ from transformers.utils import is_bitsandbytes_available
 
 from mlora.backends import backend
 
-from .abstracts import LLMSparseMoe
+from .abstracts import LLMMoeBlock
 from .config import LLMModelInput, LoraConfig
 
 if is_bitsandbytes_available():
@@ -341,7 +341,7 @@ class Linear(nn.Module):
         self.device_ = torch.device(device)
         self.base_layer_ = base_layer.to(self.device_)
         self.loras_: Dict[str, Lora] = {}
-        self.moes_: Dict[str, LLMSparseMoe] = {}
+        self.moes_: Dict[str, LLMMoeBlock] = {}
 
         if isinstance(self.base_layer_, Linear4bit):
             self.out_features_, self.in_features_ = (
