@@ -200,7 +200,7 @@ def init_lora_layer_weight(
 
     for proj_name, proj_weight in all_state_dict.items():
         proj_weight: Linear
-        if proj_name not in target_modules:
+        if proj_name not in target_modules or not target_modules[proj_name]:
             continue
         module_name = (
             "self_attn"
@@ -221,13 +221,7 @@ def init_lora_layer_weight(
                         if lora_weights is not None
                         else None
                     )
-                    if gate_weight is None:
-                        torch.nn.init.normal_(
-                            proj_weight._moe_gates[lora_config.adapter_name].weight,
-                            mean=0.0,
-                            std=lora_config.router_init_range_,
-                        )
-                    else:
+                    if gate_weight is not None:
                         with torch.no_grad():
                             proj_weight._moe_gates[
                                 lora_config.adapter_name

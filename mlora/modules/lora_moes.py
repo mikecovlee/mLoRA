@@ -1,3 +1,4 @@
+import math
 from typing import List, Tuple
 
 import torch
@@ -59,13 +60,17 @@ class LoraMoe(LLMSparseMoe):
     ):
         if not hasattr(linear, "_moe_gates"):
             linear._moe_gates = {}
-        linear._moe_gates[adapter_config.adapter_name] = torch.nn.Linear(
+        lora_route = torch.nn.Linear(
             llm_config.dim_,
             adapter_config.num_experts_,
             bias=False,
             device=llm_config.device_,
             dtype=torch.float32,
         )
+        torch.nn.init.kaiming_uniform_(
+            lora_route.weight, a=math.sqrt(adapter_config.router_init_range_)
+        )
+        linear._moe_gates[adapter_config.adapter_name] = lora_route
         linear.selective_hook_[adapter_config.adapter_name] = LoraMoe.selective_hook
 
     def forward(self, mlp: LLMFeedForward, hidden_states: torch.Tensor) -> Tuple:

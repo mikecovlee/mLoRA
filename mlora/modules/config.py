@@ -342,7 +342,7 @@ class LoraMoeConfig(LoraConfig):
             blc_alpha_=config.get("blc_alpha", 0.0),
             blc_weight_=config.get("blc_weight", 0.0),
             num_experts_=config["num_experts"],
-            router_init_range_=config.get("router_init_range", 0.02),
+            router_init_range_=config.get("router_init_range", 5.0),
             **LoraConfig.from_config(config).__dict__,
         )
 
