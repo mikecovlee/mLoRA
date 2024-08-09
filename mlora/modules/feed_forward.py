@@ -44,7 +44,11 @@ class FeedForward(torch.nn.Module):
             if moe_name in self.moes_:
                 current_hidden_states, current_router_outputs = self.moes_[
                     moe_name
-                ].forward(None, data[start_idx:end_idx], mlp=self.mlp_)
+                ].forward(
+                    hidden_states=data[start_idx:end_idx],
+                    ffn_layer=self.mlp_,
+                    input_args=input_args,
+                )
 
                 if (
                     input_args.output_router_logits_

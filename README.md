@@ -63,7 +63,9 @@ You can use the `MLORA_BACKEND_TYPE` environment variable to force m-LoRA to use
 
 *: Arguments of configuration file
 
-Note: Auxiliary Loss is not currently supported for Mo-LoRA (Mixture of LoRAs) methods other than MixLoRA
+### Notice of PEFT supports
+1. m-LoRA supports specific optimized operators for these PEFT methods, which can effectively improve the computing performance during training, evaluation and inference. However, these operators may cause a certain degree of accuracy loss (less than 5%). You can disable the optimized operators by defining the `MLORA_EVALUATE_MODE` environment variable in advance.
+2. Auxiliary Loss is not currently supported for Mo-LoRA (Mixture of LoRAs) methods other than MixLoRA
 
 ## Supported Attention Methods
 

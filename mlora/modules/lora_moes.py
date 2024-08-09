@@ -55,17 +55,14 @@ class LoraMoe(LLMMoeBlock):
         assert lora_linear is not None
         route_weight = torch.nn.functional.softmax(
             self.gate_(hidden_states.to(self.dtype_)), dim=-1, dtype=torch.float32
-        ).to(hidden_states.dtype)
+        )
         for expert_idx in range(self.experts_):
-            lora = lora_linear.loras_[f"moe.{self.adapter_name_}.experts.{expert_idx}"]
+            expert_lora = lora_linear.loras_[
+                f"moe.{self.adapter_name_}.experts.{expert_idx}"
+            ]
             residual = residual + (
                 torch.unsqueeze(route_weight[:, :, expert_idx], -1)
-                * (
-                    lora.lora_b_(
-                        lora.lora_a_(lora.dropout_(hidden_states.to(torch.float32)))
-                    )
-                    * lora.scaling_
-                )
+                * expert_lora.lora_forward(hidden_states)
             ).to(hidden_states.dtype)
 
         return residual
@@ -131,23 +128,15 @@ class MolaSparseMoe(LLMMoeBlock):
         )
 
         for expert_idx in range(self.experts_):
-            lora = lora_linear.loras_[f"moe.{self.adapter_name_}.experts.{expert_idx}"]
+            expert_lora = lora_linear.loras_[
+                f"moe.{self.adapter_name_}.experts.{expert_idx}"
+            ]
             idx, top_x = torch.where(expert_mask[expert_idx])
 
-            if top_x.shape[0] == 0:
-                continue
-
-            top_x_list = top_x.tolist()
-            idx_list = idx.tolist()
-            current_state = hidden_states[None, top_x_list].reshape(-1, hidden_dim)
-            expert_output = (
-                lora.lora_b_(
-                    lora.lora_a_(lora.dropout_(current_state.to(torch.float32)))
-                )
-                * lora.scaling_
-            )
+            current_state = hidden_states[None, top_x].reshape(-1, hidden_dim)
             current_hidden_states = (
-                expert_output * routing_weights[top_x_list, idx_list, None]
+                expert_lora.lora_forward(current_state)
+                * routing_weights[top_x, idx, None]
             )
             final_hidden_states.index_add_(
                 0, top_x, current_hidden_states.to(self.dtype_)

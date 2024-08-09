@@ -311,15 +311,18 @@ class Lora(nn.Module):
         mag_norm_scale = (self.magnitude_vector_ / weight_norm).view(1, -1)
         return mag_norm_scale * residual + mag_norm_scale * result_lora
 
+    def lora_forward(self, hidden_states: torch.Tensor):
+        return (
+            self.lora_b_(self.lora_a_(self.dropout_(hidden_states.to(torch.float32))))
+            * self.scaling_
+        )
+
     def forward(
         self,
         residual: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
-        result_lora = (
-            self.lora_b_(self.lora_a_(self.dropout_(hidden_states.to(torch.float32))))
-            * self.scaling_
-        )
+        result_lora = self.lora_forward(hidden_states)
         if self.use_dora_:
             return self.apply_dora(residual, result_lora).to(hidden_states.dtype)
         else:
@@ -481,8 +484,8 @@ class Linear(nn.Module):
                 continue
 
             lora_data = fwd_fn(
-                residual[start_idx:end_idx],
-                hidden_states[start_idx:end_idx],
+                residual=residual[start_idx:end_idx],
+                hidden_states=hidden_states[start_idx:end_idx],
                 **kwargs,
             )
             backend.index_copy(next_states, 0, lora_range[start_idx:end_idx], lora_data)

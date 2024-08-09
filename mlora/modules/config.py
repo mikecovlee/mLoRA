@@ -1,5 +1,6 @@
 import copy
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, TypeAlias, Union
 
 import torch
@@ -66,6 +67,11 @@ class LLMBatchConfig:
     batch_end_idx_: int = -1
 
 
+def _efficient_operator_factory():
+    efficient_operator = os.getenv("MLORA_EVALUATE_MODE") is None
+    return efficient_operator
+
+
 @dataclass
 class LLMModelInput:
     batch_configs_: List[LLMBatchConfig] = None
@@ -76,7 +82,7 @@ class LLMModelInput:
     output_router_logits_: bool = True
 
     gradient_checkpoint_: str = "none"
-    efficient_operator_: bool = True
+    efficient_operator_: bool = field(default_factory=_efficient_operator_factory)
     inference_mode_: bool = False
 
 

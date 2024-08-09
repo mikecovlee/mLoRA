@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from transformers.activations import ACT2FN
 
-from .abstracts import LLMFeedForward, LLMMoeBlock
+from .abstracts import LLMFeedForward, LLMModelInput, LLMMoeBlock
 from .config import MixLoraConfig
 
 
@@ -97,14 +97,21 @@ class MixtralRouterLoss(torch.nn.Module):
 
 
 def _mixtral_compatible_forward(
-    mlp: LLMFeedForward, moe_name: str, act_fn, expert_mask, hidden_states, input_dtype
+    ffn_layer: LLMFeedForward,
+    moe_name: str,
+    act_fn: torch.nn.Module,
+    expert_mask: torch.Tensor,
+    hidden_states: torch.Tensor,
+    input_dtype: torch.device,
 ):
     final_expert_states = []
     for expert_idx in range(expert_mask.shape[0]):
         _, top_x = torch.where(expert_mask[expert_idx])
         lora_name = f"moe.{moe_name}.experts.{expert_idx}"
         lora_data = _slice_tensor(hidden_states, top_x, input_dtype)
-        final_expert_states.append(mlp._lora_forward(lora_name, act_fn, lora_data))
+        final_expert_states.append(
+            ffn_layer._lora_forward(lora_name, act_fn, lora_data)
+        )
 
     return final_expert_states
 
@@ -171,11 +178,14 @@ class MixtralSparseMoe(LLMMoeBlock):
                 self.profiler_[idx] = (self.profiler_[idx] + pressure) / 2
 
     def forward(
-        self, residual: torch.Tensor, hidden_states: torch.Tensor, mlp: LLMFeedForward
+        self,
+        hidden_states: torch.Tensor,
+        ffn_layer: LLMFeedForward,
+        input_args: LLMModelInput,
     ) -> Tuple:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
 
-        if self.jitter_noise_ > 0:
+        if not input_args.inference_mode_ and self.jitter_noise_ > 0:
             # Multiply the token inputs by the uniform distribution - adding some noise
             hidden_states *= torch.empty_like(hidden_states).uniform_(
                 1.0 - self.jitter_noise_, 1.0 + self.jitter_noise_
@@ -208,13 +218,13 @@ class MixtralSparseMoe(LLMMoeBlock):
         ).permute(2, 1, 0)
 
         # Perform the computation on each expert
-        if hasattr(mlp, "_mixlora_forward"):
-            expert_states = mlp._mixlora_forward(
+        if input_args.efficient_operator_ and hasattr(ffn_layer, "_mixlora_forward"):
+            expert_states = ffn_layer._mixlora_forward(
                 self.adapter_name_, self.act_, expert_mask, hidden_states, input_dtype
             )
         else:
             expert_states = _mixtral_compatible_forward(
-                mlp,
+                ffn_layer,
                 self.adapter_name_,
                 self.act_,
                 expert_mask,
@@ -389,8 +399,8 @@ class SwitchSparseMoe(LLMMoeBlock):
                 pressure = (router_statistic_[idx] / batch_size) / sequence_length
                 self.profiler_[idx] = (self.profiler_[idx] + pressure) / 2
 
-    def route(self, hidden_states: torch.Tensor) -> Tuple:
-        if self.jitter_noise_ > 0:
+    def route(self, hidden_states: torch.Tensor, input_args: LLMModelInput) -> Tuple:
+        if not input_args.inference_mode_ and self.jitter_noise_ > 0:
             # Multiply the token inputs by the uniform distribution - adding some noise
             hidden_states = hidden_states * torch.empty_like(hidden_states).uniform_(
                 1.0 - self.jitter_noise_, 1.0 + self.jitter_noise_
@@ -416,16 +426,16 @@ class SwitchSparseMoe(LLMMoeBlock):
 
     def forward(
         self,
-        residual: torch.Tensor,
         hidden_states: torch.Tensor,
-        mlp: LLMFeedForward,
+        ffn_layer: LLMFeedForward,
+        input_args: LLMModelInput,
     ) -> Tuple:
         batch_size, sequence_length, _ = hidden_states.shape
 
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(self.dtype_)
 
-        router_mask, router_probs, router_logits = self.route(hidden_states)
+        router_mask, router_probs, router_logits = self.route(hidden_states, input_args)
 
         self._profiling(batch_size, sequence_length, router_mask)
 
@@ -433,10 +443,13 @@ class SwitchSparseMoe(LLMMoeBlock):
         for expert_idx in range(self.experts_):
             token_indices = router_mask[:, :, expert_idx].bool()
             lora_name = f"moe.{self.adapter_name_}.experts.{expert_idx}"
-            next_states[token_indices] = mlp._lora_forward(
+            next_states[token_indices] = ffn_layer._lora_forward(
                 lora_name, self.act_, hidden_states[token_indices].to(input_dtype)
             ).to(next_states.dtype)
 
-        hidden_states = self.dropout_(router_probs * next_states).to(input_dtype)
+        if input_args.inference_mode_:
+            hidden_states = hidden_states.to(input_dtype)
+        else:
+            hidden_states = self.dropout_(router_probs * next_states).to(input_dtype)
 
         return hidden_states, router_logits
