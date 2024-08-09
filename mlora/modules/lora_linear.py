@@ -324,7 +324,7 @@ class Lora(nn.Module):
     ) -> torch.Tensor:
         result_lora = self.lora_forward(hidden_states)
         if self.use_dora_:
-            return self.apply_dora(residual, result_lora).to(hidden_states.dtype)
+            return self.apply_dora(residual, result_lora).to(residual.dtype)
         else:
             return residual + result_lora.to(residual.dtype)
 
@@ -416,7 +416,7 @@ class Linear(nn.Module):
         for lora_config in input_args.batch_configs_:
             adapter_name = lora_config.adapter_name_
 
-            if adapter_name == "" or adapter_name not in self.loras_:
+            if adapter_name not in self.loras_:
                 loras += (None, None)
                 dropouts.append(None)
                 scalings.append(None)
@@ -481,6 +481,12 @@ class Linear(nn.Module):
                 fwd_fn = self.moes_[adapter_name].forward
                 kwargs = {"lora_linear": self}
             else:
+                backend.index_copy(
+                    next_states,
+                    0,
+                    lora_range[start_idx:end_idx],
+                    residual[start_idx:end_idx],
+                )
                 continue
 
             lora_data = fwd_fn(
