@@ -216,7 +216,7 @@ class MixLoraConfig(LoraConfig):
     jitter_noise_: float = None
     router_loss_: bool = True
     num_experts_: int = None
-    act_fn_: Optional[str] = None
+    act_fn_: Optional[Union[str, torch.nn.Module]] = None
     # mixtral config
     top_k_: int = None
     # switch transformers config
@@ -304,7 +304,7 @@ class MixLoraConfig(LoraConfig):
             config["expert_lora"] = expert_config
         config["routing_strategy"] = self.routing_strategy_
         config["num_experts"] = self.num_experts_
-        if self.act_fn_ is not None:
+        if self.act_fn_ is not None and isinstance(self.act_fn_, str):
             config["act_fn"] = self.act_fn_
         if self.routing_strategy_ == "mixlora":
             config["top_k"] = self.top_k_

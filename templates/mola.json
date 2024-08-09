@@ -6,7 +6,7 @@
     "train_strategy": "optim",
     "lora": [
         {
-            "name": "mixlora",
+            "name": "mola",
             "task_name": "",
             "optim": "adamw",
             "scheduler_type": "constant",

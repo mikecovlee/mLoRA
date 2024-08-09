@@ -456,6 +456,11 @@ class GLMSelfAttention(LLMAttention):
         return output
 
 
+def swiglu(x):
+    x = torch.chunk(x, 2, dim=-1)
+    return F.silu(x[0]) * x[1]
+
+
 class GLMMLP(LLMFeedForward):
     def __init__(
         self,
@@ -466,10 +471,6 @@ class GLMMLP(LLMFeedForward):
         super().__init__()
         self.dense_h_to_4h: Linear = Linear(dense_h_to_4h, config.device_)
         self.dense_4h_to_h: Linear = Linear(dense_4h_to_h, config.device_)
-
-        def swiglu(x):
-            x = torch.chunk(x, 2, dim=-1)
-            return F.silu(x[0]) * x[1]
 
         self.activation_func = swiglu
 
@@ -772,6 +773,7 @@ class GLMForCausalLM(LLMForCausalLM):
             n_heads_=llm_config.num_attention_heads,
             n_kv_heads_=llm_config.multi_query_group_num,
             n_layers_=llm_config.num_layers,
+            hidden_act_=swiglu,
             hidden_dropout_=llm_config.hidden_dropout,
             vocab_size_=llm_config.vocab_size,
             pad_token_id_=llm_config.pad_token_id,

@@ -16,17 +16,14 @@
             "micro_batch_size": 8,
             "evaluate_batch_size": 16,
             "num_epochs": 2,
-            "r": 24,
-            "lora_alpha": 48,
+            "r": 22,
+            "lora_alpha": 44,
             "lora_dropout": 0.05,
             "target_modules": {
-                "q_proj": false,
-                "k_proj": false,
-                "v_proj": false,
+                "qkv_proj": false,
                 "o_proj": false,
-                "gate_proj": true,
-                "down_proj": true,
-                "up_proj": true
+                "gate_up_proj": true,
+                "down_proj": true
             },
             "routing_strategy": "loramoe",
             "num_experts": 6,

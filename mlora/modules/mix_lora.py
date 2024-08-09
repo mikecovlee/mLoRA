@@ -135,7 +135,11 @@ class MixtralSparseMoe(LLMMoeBlock):
             device=device,
             dtype=self.dtype_,
         )
-        self.act_ = ACT2FN[config.act_fn_]
+        self.act_ = (
+            ACT2FN[config.act_fn_]
+            if isinstance(config.act_fn_, str)
+            else config.act_fn_
+        )
         self.experts_: int = config.num_experts_
         self.topk_: int = config.top_k_
         self.jitter_noise_: float = config.jitter_noise_
@@ -353,7 +357,11 @@ class SwitchSparseMoe(LLMMoeBlock):
             device=device,
             dtype=self.dtype_,
         )
-        self.act_ = ACT2FN[config.act_fn_]
+        self.act_ = (
+            ACT2FN[config.act_fn_]
+            if isinstance(config.act_fn_, str)
+            else config.act_fn_
+        )
         self.experts_: int = config.num_experts_
         self.dropout_ = (
             torch.nn.Dropout(config.ffn_dropout_)

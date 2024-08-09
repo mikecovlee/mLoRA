@@ -6,7 +6,7 @@
     "train_strategy": "optim",
     "lora": [
         {
-            "name": "loramoe",
+            "name": "mola",
             "task_name": "",
             "optim": "adamw",
             "scheduler_type": "constant",
@@ -16,20 +16,18 @@
             "micro_batch_size": 8,
             "evaluate_batch_size": 16,
             "num_epochs": 2,
-            "r": 24,
-            "lora_alpha": 48,
+            "r": 10,
+            "lora_alpha": 20,
             "lora_dropout": 0.05,
             "target_modules": {
-                "q_proj": false,
-                "k_proj": false,
-                "v_proj": false,
-                "o_proj": false,
-                "gate_proj": true,
-                "down_proj": true,
-                "up_proj": true
+                "qkv_proj": true,
+                "dense": true,
+                "dense_h_to_4h": true,
+                "dense_4h_to_h": true
             },
-            "routing_strategy": "loramoe",
-            "num_experts": 6,
+            "routing_strategy": "mola",
+            "num_experts": 8,
+            "top_k": 2,
             "group_by_length": false
         }
     ]
