@@ -18,6 +18,8 @@ You can try m-LoRA with [Google Colab](https://githubtocolab.com/mikecovlee/mLoR
 
 ## Note from the maintainer of this repository
 
+**This repository has transferred to https://github.com/TUDB-Labs/MoE-PEFT, please use MoE-PEFT instead of this software.**
+
 This is an actively developing fork of the official m-LoRA repository, focusing on the PEFT algorithm and its related improvements. It is maintained by the authors of m-LoRA. Currently, this fork **does not support pipeline parallelism** and can only utilize a single compute device, such as a GPU or NPU, for each m-LoRA process. Please note that the functions, interfaces, and performance of this fork differ from those of the original m-LoRA. Compatibility is not guaranteed. For production use, please prefer the [original m-LoRA](https://github.com/TUDB-Labs/mLoRA).
 
 ## Supported Platform
