@@ -253,11 +253,9 @@ class MixLoraConfig(LoraConfig):
             assert isinstance(self.top_k_, int) and self.top_k_ > 0
         elif self.routing_strategy_ == "mixlora-dynamic":
             assert (
-                isinstance(self.top_p_, float)
-                and self.top_p_ > 0.0
-                and self.top_p_ <= 1.0
+                isinstance(self.top_p_, float) and self.top_p_ > 0 and self.top_p_ <= 1
             )
-            assert isinstance(self.temperature_, float) and self.temperature_ >= 0.0
+            assert isinstance(self.temperature_, float) and self.temperature_ >= 0
         elif self.routing_strategy_ == "mixlora-switch":
             assert (
                 isinstance(self.router_z_loss_coef_, float)

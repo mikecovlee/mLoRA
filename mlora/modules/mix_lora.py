@@ -42,16 +42,21 @@ def _mixlora_compatible_forward(
     return final_expert_states
 
 
+def _unpack_router_logits(gate_logits: List[torch.Tensor]):
+    compute_device = gate_logits[0].device
+    concatenated_gate_logits = torch.cat(
+        [layer_gate.to(compute_device) for layer_gate in gate_logits], dim=0
+    )
+    return concatenated_gate_logits
+
+
 def _mixtral_load_balancing_loss_func(
     gate_logits: List[torch.Tensor],
     num_experts: int,
     top_k: int,
     attention_mask: Optional[torch.Tensor] = None,
 ) -> float:
-    compute_device = gate_logits[0].device
-    concatenated_gate_logits = torch.cat(
-        [layer_gate.to(compute_device) for layer_gate in gate_logits], dim=0
-    )
+    concatenated_gate_logits = _unpack_router_logits(gate_logits)
 
     routing_weights = torch.nn.functional.softmax(concatenated_gate_logits, dim=-1)
 
@@ -67,9 +72,7 @@ def _mixtral_load_balancing_loss_func(
         router_prob_per_expert = torch.mean(routing_weights, dim=0)
     else:
         batch_size, sequence_length = attention_mask.shape
-        num_hidden_layers = concatenated_gate_logits.shape[0] // (
-            batch_size * sequence_length
-        )
+        num_hidden_layers = routing_weights.shape[0] // (batch_size * sequence_length)
 
         # Compute the mask that masks all padding tokens as 0 with the same shape of expert_mask
         expert_attention_mask = (
@@ -78,7 +81,7 @@ def _mixtral_load_balancing_loss_func(
                 (num_hidden_layers, batch_size, sequence_length, top_k, num_experts)
             )
             .reshape(-1, top_k, num_experts)
-            .to(compute_device)
+            .to(routing_weights.device)
         )
 
         # Compute the percentage of tokens routed to each experts
@@ -91,7 +94,7 @@ def _mixtral_load_balancing_loss_func(
             attention_mask[None, :, :, None]
             .expand((num_hidden_layers, batch_size, sequence_length, num_experts))
             .reshape(-1, num_experts)
-            .to(compute_device)
+            .to(routing_weights.device)
         )
 
         # Compute the average probability of routing to these experts
@@ -260,33 +263,40 @@ class MixtralSparseMoe(LLMMoeBlock):
         return final_hidden_states, router_logits
 
 
-def _top_p(router_logits: torch.Tensor, p: float, temperature: float = 0.0):
+def _dynamic_top_p(router_logits: torch.Tensor, top_p: float, temperature: float = 0.0):
     if temperature > 0.0:
         router_logits = router_logits / temperature
     sorted_logits, sorted_indices = torch.sort(router_logits, dim=-1, descending=True)
     cumulative_probs = sorted_logits.cumsum(dim=-1)
-    expert_index = cumulative_probs > p
-    expert_index = expert_index.long().argmax(dim=-1)
-    dynamic_top_k = max(expert_index.min(), 1)
-    return sorted_logits[..., :dynamic_top_k], sorted_indices[..., :dynamic_top_k]
+    expert_mask = cumulative_probs > top_p
+    threshold_indices = expert_mask.long().argmax(dim=-1)
+    threshold_mask = torch.nn.functional.one_hot(
+        threshold_indices, num_classes=sorted_indices.size(-1)
+    ).bool()
+    expert_mask = expert_mask & ~threshold_mask
+    sorted_logits = sorted_logits.masked_fill(expert_mask, 0.0)
+    sorted_indices = sorted_indices.masked_fill(expert_mask, -1)
+    return sorted_logits, sorted_indices
 
 
 def _dynamic_load_balancing_loss_func(
-    gate_logits: List[torch.Tensor],
+    routing_weights: torch.Tensor,
     num_experts: int,
     top_p: float,
     temperature: float,
 ) -> float:
-    compute_device = gate_logits[0].device
-    concatenated_gate_logits = torch.cat(
-        [layer_gate.to(compute_device) for layer_gate in gate_logits], dim=0
+    _, selected_experts = _dynamic_top_p(routing_weights, top_p, temperature)
+
+    expert_mask = torch.empty(
+        (num_experts, num_experts, routing_weights.size(0)),
+        dtype=routing_weights.dtype,
+        device=routing_weights.device,
     )
 
-    routing_weights = torch.nn.functional.softmax(concatenated_gate_logits, dim=-1)
+    for expert_idx in range(num_experts):
+        expert_mask[expert_idx] = (selected_experts == expert_idx).transpose(0, 1)
 
-    _, selected_experts = _top_p(routing_weights, top_p, temperature)
-
-    expert_mask = torch.nn.functional.one_hot(selected_experts, num_experts)
+    expert_mask = expert_mask.permute(2, 1, 0)
 
     # Compute the percentage of tokens routed to each experts
     tokens_per_expert = torch.mean(expert_mask.float(), dim=0)
@@ -307,8 +317,13 @@ class DynamicRouterLoss(torch.nn.Module):
         self.temperature = config.temperature_
 
     def forward(self, gate_logits, attention_mask) -> torch.Tensor:
+        concatenated_gate_logits = _unpack_router_logits(gate_logits)
+        routing_weights = torch.nn.functional.softmax(concatenated_gate_logits, dim=-1)
         return self.aux_loss_coef * _dynamic_load_balancing_loss_func(
-            gate_logits, self.experts, self.top_p, self.temperature
+            routing_weights,
+            self.experts,
+            self.top_p,
+            self.temperature,
         )
 
 
@@ -398,7 +413,7 @@ class DynamicSparseMoe(LLMMoeBlock):
         router_logits = self.gate_(hidden_states)
 
         routing_weights = F.softmax(router_logits, dim=1, dtype=self.dtype_)
-        routing_weights, selected_experts = _top_p(
+        routing_weights, selected_experts = _dynamic_top_p(
             routing_weights, self.top_p_, self.temperature_
         )
 
@@ -410,11 +425,14 @@ class DynamicSparseMoe(LLMMoeBlock):
             device=hidden_states.device,
         )
 
-        # One hot encode the selected experts to create an expert mask
-        # this will be used to easily index which expert is going to be sollicitated
-        expert_mask = torch.nn.functional.one_hot(
-            selected_experts, num_classes=self.experts_
-        ).permute(2, 1, 0)
+        expert_mask = torch.empty(
+            (self.experts_, self.experts_, batch_size * sequence_length),
+            dtype=self.dtype_,
+            device=hidden_states.device,
+        )
+
+        for expert_idx in range(self.experts_):
+            expert_mask[expert_idx] = (selected_experts == expert_idx).transpose(0, 1)
 
         # Perform the computation on each expert
         if input_args.efficient_operator_ and hasattr(ffn_layer, "_mixlora_forward"):
